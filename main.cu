@@ -2,7 +2,7 @@
 #include <cstdlib>
 #include <cstdio>
 #include <unistd.h>
-
+#include "seq.hpp"
 
 __global__ void cuda_hello(int *a)
 {
@@ -13,11 +13,11 @@ __global__ void cuda_hello(int *a)
 int main()
 {
     // Allocate memory for the variable 'a' on the CPU
-    int *a_cpu = (int*)malloc(sizeof(int));
+    int *a_cpu = (int *)malloc(sizeof(int));
 
     // Allocate memory for the variable 'a' on the GPU
     int *a_gpu;
-    cudaMalloc((void**)&a_gpu, sizeof(int));
+    cudaMalloc((void **)&a_gpu, sizeof(int));
 
     // Launch the CUDA kernel
     cuda_hello<<<1, 1>>>(a_gpu);
@@ -32,6 +32,26 @@ int main()
     // Free allocated memory
     free(a_cpu);
     cudaFree(a_gpu);
+
+    std::vector<bool> in(16);
+    std::vector<bool> out(16);
+    for (size_t i = 0; i < in.size(); i++)
+    {
+        in[i] = rand() % 2;
+        if (i != 0 && i % ((size_t)sqrt(in.size())) == 0)
+            std::cout << std::endl;
+        std::cout << in[i] << " ";
+    }
+    std::cout << std::endl << "out:" << std::endl;
+
+    isingSeq(out, in, 4, 1);
+    for (size_t i = 0; i < out.size(); i++)
+    {
+        if (i != 0 && i % ((size_t)sqrt(out.size())) == 0)
+            std::cout << std::endl;
+        std::cout << out[i] << " ";
+    }
+    std::cout << std::endl;
 
     return 0;
 }
