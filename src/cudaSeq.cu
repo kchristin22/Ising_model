@@ -16,7 +16,7 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
                 out[index] = sum > 2; // if majority is true (sum in [3,5]), out is true
             }
         }
-        in = out;
+        memcpy(in, out, sizeof(out));
     }
 }
 
