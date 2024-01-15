@@ -1,8 +1,7 @@
 #include <iostream>
-#include <stdlib.h>
 #include "seq.hpp"
 
-void isingSeq(std::vector<bool> &out, std::vector<bool> &in, const size_t n, const uint32_t k)
+void isingSeq(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const size_t n, const uint32_t k)
 {
     // check if in vector has the right dimensions
     if (in.size() != n * n)
