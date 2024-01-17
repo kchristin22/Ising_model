@@ -15,12 +15,12 @@ __global__ void isingModelBlocks(uint8_t *out, uint8_t *in, const size_t n, cons
     {
         for (size_t i = start; i < end; i++)
         {
-            uint8_t sum = in[i] + in[(i + n) % n2] + in[(i - n + n2) % n2] + in[(i + 1) % n2] + in[(i - 1 + n2) % n2];
+            uint8_t sum = in[i] + in[(i + n) % n2] + in[(i - n + n2) % n2] + in[(i + 1) % n] + in[(i - 1 + n) % n];
             out[i] = sum > 2; // if majority is true (sum in [3,5]), out is true
         }
 
-        memcpy(&in[start], &out[start], sizeof(uint8_t) * (end - start));
         __syncthreads();
+        memcpy(&in[start], &out[start], sizeof(uint8_t) * (end - start));
     }
 }
 
