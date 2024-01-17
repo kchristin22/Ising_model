@@ -11,7 +11,7 @@ void isingSeq(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const size_t 
     }
     out.resize(n * n);
 
-    for (size_t i = 0; i < k; i++)
+    for (size_t iter = 0; iter < k; iter++)
     {
         for (size_t i = 0; i < n; i++)
         {

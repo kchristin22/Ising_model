@@ -3,7 +3,7 @@
 
 __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint32_t k)
 {
-    for (size_t i = 0; i < k; i++)
+    for (size_t iter = 0; iter < k; iter++)
     {
         for (size_t i = 0; i < n; i++)
         {
