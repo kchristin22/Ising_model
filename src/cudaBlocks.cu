@@ -1,7 +1,7 @@
 #include <iostream>
 #include "cudaBlocks.cuh"
 
-__global__ void isingModelBlocks(uint8_t *out, uint8_t *in, const size_t n, const uint32_t k, const uint32_t blockChunk)
+__global__ void isingModelBlocks(uint8_t *out, uint8_t *in, const size_t n, const uint32_t k, const uint32_t blockChunk, uint32_t *blockCounter)
 {
     size_t n2 = n * n;
     size_t start = blockIdx.x * blockChunk;
@@ -19,7 +19,12 @@ __global__ void isingModelBlocks(uint8_t *out, uint8_t *in, const size_t n, cons
             out[i] = sum > 2; // if majority is true (sum in [3,5]), out is true
         }
 
-        __syncthreads();
+        atomicAdd(blockCounter, 1);
+
+        while (*blockCounter < gridDim.x && *blockCounter != 0) // if blockCounter is 0, then all blocks have finished and one has initialized the counter to 0
+            __threadfence_block();                              // Ensure I have the latest value of blockCounter
+        blockCounter = 0;
+
         memcpy(&in[start], &out[start], sizeof(uint8_t) * (end - start));
     }
 }
@@ -39,6 +44,10 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const size_t
     cudaMalloc((void **)&d_in, n * n * sizeof(uint8_t));
     cudaMalloc((void **)&d_out, n * n * sizeof(uint8_t));
 
+    uint32_t *blockCounter;
+    cudaMalloc((void **)&blockCounter, sizeof(uint32_t));
+    cudaMemset(&blockCounter, 0, sizeof(uint32_t));
+
     // Copy the input to the device
     cudaMemcpy(d_in, in.data(), n * n * sizeof(uint8_t), cudaMemcpyHostToDevice);
 
@@ -47,7 +56,7 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const size_t
     uint32_t blockNum = blocks * blockChunk == n2 ? blocks : blocks + 1;
 
     // Launch the kernel
-    isingModelBlocks<<<blockNum, 1>>>(d_out, d_in, n, k, blockChunk);
+    isingModelBlocks<<<blockNum, 1>>>(d_out, d_in, n, k, blockChunk, blockCounter);
     cudaDeviceSynchronize();
 
     // Copy the output back to the host
@@ -56,4 +65,5 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const size_t
     // Free the memory on the device
     cudaFree(d_in);
     cudaFree(d_out);
+    cudaFree(blockCounter);
 }
