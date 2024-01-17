@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include "seq.hpp"
 #include "cudaSeq.cuh"
+#include "cudaThreads.cuh"
 
 __global__ void cuda_hello(int *a)
 {
@@ -47,7 +48,8 @@ int main()
               << "out:" << std::endl;
 
     // isingSeq(out, in, 4, 1);
-    isingCudaSeq(out, in, 4, 2, 1);
+    // isingCudaSeq(out, in, 4, 2, 1);
+    isingCuda(out, in, 4, 1, 3);
 
     for (size_t i = 0; i < out.size(); i++)
     {
