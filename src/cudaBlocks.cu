@@ -1,7 +1,7 @@
 #include <iostream>
-#include "cudaThreads.cuh"
+#include "cudaBlocks.cuh"
 
-__global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint32_t k, const uint32_t blockChunk)
+__global__ void isingModelBlocks(uint8_t *out, uint8_t *in, const size_t n, const uint32_t k, const uint32_t blockChunk)
 {
     size_t n2 = n * n;
     size_t start = blockIdx.x * blockChunk;
@@ -47,7 +47,7 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const size_t
     uint32_t blockNum = blocks * blockChunk == n2 ? blocks : blocks + 1;
 
     // Launch the kernel
-    isingModel<<<blockNum, 1>>>(d_out, d_in, n, k, blockChunk);
+    isingModelBlocks<<<blockNum, 1>>>(d_out, d_in, n, k, blockChunk);
     cudaDeviceSynchronize();
 
     // Copy the output back to the host

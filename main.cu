@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include "seq.hpp"
 #include "cudaSeq.cuh"
-#include "cudaThreads.cuh"
+#include "cudaBlocks.cuh"
 
 __global__ void cuda_hello(int *a)
 {
