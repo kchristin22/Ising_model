@@ -41,15 +41,46 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const size_t
 
     // Allocate memory on the device
     uint8_t *d_in, *d_out;
-    cudaMalloc((void **)&d_in, n * n * sizeof(uint8_t));
-    cudaMalloc((void **)&d_out, n * n * sizeof(uint8_t));
+    cudaError_t error = cudaMalloc((void **)&d_in, n * n * sizeof(uint8_t));
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Malloc of d_in failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        // Additional error handling if needed
+    }
+    error = cudaMalloc((void **)&d_out, n * n * sizeof(uint8_t));
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Malloc of d_out failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        // Additional error handling if needed
+    }
 
     uint32_t *blockCounter;
-    cudaMalloc((void **)&blockCounter, sizeof(uint32_t));
-    cudaMemset(&blockCounter, 0, sizeof(uint32_t));
+    error = cudaMalloc((void **)&blockCounter, sizeof(uint32_t));
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Malloc of blockCounter failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        // Additional error handling if needed
+    }
+    error = cudaMemset(blockCounter, 0, sizeof(uint32_t));
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Memset of blockCounter failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        // Additional error handling if needed
+    }
+    
 
     // Copy the input to the device
-    cudaMemcpy(d_in, in.data(), n * n * sizeof(uint8_t), cudaMemcpyHostToDevice);
+    error = cudaMemcpy(d_in, in.data(), n * n * sizeof(uint8_t), cudaMemcpyHostToDevice);
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Memcpy of d_in failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        // Additional error handling if needed
+    }
 
     size_t n2 = n * n;
     uint32_t blockChunk = n2 / blocks;
@@ -57,6 +88,14 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const size_t
 
     // Launch the kernel
     isingModelBlocks<<<blockNum, 1>>>(d_out, d_in, n, k, blockChunk, blockCounter);
+    
+    cudaError_t cudaStatus = cudaGetLastError();
+    if (cudaStatus != cudaSuccess)
+    {
+        fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+        printf("Error: %d\n", cudaStatus);
+        // Additional error handling if needed
+    }
     cudaDeviceSynchronize();
 
     // Copy the output back to the host
