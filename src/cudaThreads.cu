@@ -1,124 +1,137 @@
 #include <iostream>
+#include <cmath>
 #include "cudaThreads.cuh"
 
-__global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint32_t k, const uint32_t blockChunk, uint32_t *blockCounter)
+__global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint32_t k, uint32_t *blockCounter)
 {
     size_t n2 = n * n;
-    size_t threadChunk = blockChunk / blockDim.x;
-    size_t start = blockIdx.x * blockChunk + threadIdx.x * threadChunk;
-    size_t end = threadIdx.x == blockDim.x - 1 ? start + threadChunk + (blockChunk - blockDim.x * threadChunk) : start + threadChunk;
-    if (end > n2)
-        end = n2;
+    size_t index = blockIdx.x * blockDim.x + threadIdx.x;
 
-    __shared__ uint8_t s[MAX_SHARED_PER_BLOCK];
-    uint8_t *s_in = s;
-    uint8_t *s_out = &s[blockChunk];
-    memcpy(&s_in[start], &in[start], sizeof(uint8_t) * (end - start));
+    if (index >= n2) // more threads than elements may have been created
+        return;
 
-    // printf("gridDim.x: %d, blockIdx.x: %d, threadChunk: %d, start: %ld, end: %ld\n", gridDim.x, blockIdx.x, threadChunk, start, end);
-    // printf("threadIdx.x: %d, gridDim.x: %d, start: %ld, end: %ld\n", threadIdx.x, gridDim.x, start, end);
+    size_t up = (index - n + n2) % n2;
+    size_t down = (index + n) % n2;
+    size_t row = index / n;
+    size_t left = row * n + (index - 1 + n) % n;
+    size_t right = row * n + (index + 1) % n;
 
     for (size_t iter = 0; iter < k; iter++)
     {
-        __syncthreads();
-        for (size_t i = start; i < end; i++)
-        {
-            uint8_t sum = s_in[i] + s_in[(i + n) % n2] + s_in[(i - n + n2) % n2] + s_in[(i + 1) % n] + s_in[(i - 1 + n) % n]; // operate in shared, sync tricky
-            s_out[i] = sum > 2;                                                                                               // if majority is true (sum in [3,5]), out is true
-        }
+        uint8_t sum = in[index] + in[up] + in[down] + in[left] + in[right];
+        out[index] = sum > 2; // assign the majority
 
-        if (threadIdx.x == 0)
+        // sync the running blocks
+        if (threadIdx.x == 0) // each block has at least one thread
+        {
+            atomicAdd(blockCounter, 1); // this block has finished
+            __threadfence();            // ensure that threads reading the value of blockCounter from now on cannot see the previous value
+
+            while (*blockCounter < gridDim.x && *blockCounter != 0)
+                ; // if blockCounter is 0, then all blocks have finished and one has initialized the counter to 0
+
+            *blockCounter = 0;
+        }
+        __syncthreads(); // other threads of the block wait for thread 0
+
+        in[index] = out[index]; // update input
+
+        if (threadIdx.x == 0) // ensure all threads have finished copying
         {
             atomicAdd(blockCounter, 1);
+            __threadfence();
 
-            while (*blockCounter < gridDim.x && *blockCounter != 0) // if blockCounter is 0, then all blocks have finished and one has initialized the counter to 0
-                __threadfence_block();                              // Ensure I have the latest value of blockCounter
+            while (*blockCounter < gridDim.x && *blockCounter != 0)
+                ;
 
             *blockCounter = 0;
         }
         __syncthreads();
-        memcpy(&s_in[start], &s_out[start], sizeof(uint8_t) * (end - start));
     }
-
-    memcpy(&out[start], &s_out[start], sizeof(uint8_t) * (end - start));
 }
 
-void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const size_t n, const uint32_t k, uint32_t blocks, uint32_t threads)
+void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32_t k)
 {
-    // check if in vector has the right dimensions
-    if (in.size() != n * n)
+    size_t n2 = in.size();
+    // check if `in` vector has a perfect square size
+    if (ceil(sqrt(n2)) != floor(sqrt(n2)))
     {
         std::cout << "Error: input vector has wrong dimensions" << std::endl;
         return;
     }
-    out.resize(n * n);
+    out.resize(n2);
 
-    // Allocate memory on the device
+    // Allocate memory on the device (GPU)
     uint8_t *d_in, *d_out;
-    cudaError_t error = cudaMalloc((void **)&d_in, n * n * sizeof(uint8_t));
+    cudaError_t error = cudaMalloc((void **)&d_in, n2 * sizeof(uint8_t));
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Malloc of d_in failed: %s\n", cudaGetErrorString(error));
         printf("Error: %d\n", error);
-        // Additional error handling if needed
+        return;
     }
-    error = cudaMalloc((void **)&d_out, n * n * sizeof(uint8_t));
+    error = cudaMalloc((void **)&d_out, n2 * sizeof(uint8_t));
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Malloc of d_out failed: %s\n", cudaGetErrorString(error));
         printf("Error: %d\n", error);
-        // Additional error handling if needed
+        return;
     }
 
-    uint32_t *blockCounter;
+    uint32_t *blockCounter; // used to sync the blocks
     error = cudaMalloc((void **)&blockCounter, sizeof(uint32_t));
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Malloc of blockCounter failed: %s\n", cudaGetErrorString(error));
         printf("Error: %d\n", error);
-        // Additional error handling if needed
     }
-    error = cudaMemset(blockCounter, 0, sizeof(uint32_t));
+    error = cudaMemset(blockCounter, 0, sizeof(uint32_t)); // initialize block counter to 0
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Memset of blockCounter failed: %s\n", cudaGetErrorString(error));
         printf("Error: %d\n", error);
-        // Additional error handling if needed
     }
 
-    // Copy the input to the device
-    error = cudaMemcpy(d_in, in.data(), n * n * sizeof(uint8_t), cudaMemcpyHostToDevice);
+    // Copy the input from CPU to the device
+    error = cudaMemcpy(d_in, in.data(), n2 * sizeof(uint8_t), cudaMemcpyHostToDevice);
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Memcpy of d_in failed: %s\n", cudaGetErrorString(error));
         printf("Error: %d\n", error);
-        // Additional error handling if needed
+        return;
     }
 
-    size_t n2 = n * n;
-    uint32_t blockChunk = n2 / blocks;
-    blocks = blocks * blockChunk == n2 ? blocks : blocks++;
+    // Calculate the number of blocks and threads needed to assign a single element to each thread
+    uint32_t blocks = (uint32_t)ceil((double)n2 / MAX_THREADS_PER_BLOCK); // there is no limit for the number of blocks
+    uint32_t threads = (uint32_t)ceil((double)n2 / blocks);               // distribute the elements evenly among the blocks
 
-    if (threads > MAX_THREADS_PER_BLOCK)
-    {
-        std::cout << "Error: too many threads per block. Using 1024 threads per block" << std::endl;
-        threads = MAX_THREADS_PER_BLOCK;
-    }
-
-    // Launch the kernel
-    isingModel<<<blocks, threads>>>(d_out, d_in, n, k, blockChunk, blockCounter);
-
-    cudaError_t cudaStatus = cudaGetLastError();
+    // Run the kernel
+    isingModel<<<blocks, threads>>>(d_out, d_in, (size_t)sqrt(n2), k, blockCounter);
+    cudaError_t cudaStatus = cudaGetLastError(); // Since no error was returned from all the previous cuda calls,
+                                                 // the last error must be from the kernel launch
     if (cudaStatus != cudaSuccess)
     {
         fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
         printf("Error: %d\n", cudaStatus);
-        // Additional error handling if needed
     }
-    cudaDeviceSynchronize();
+
+    // Wait for the kernel to finish to avoid exiting the program prematurely
+    error = cudaDeviceSynchronize();
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Device synchronization failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
 
     // Copy the output back to the host
-    cudaMemcpy(out.data(), d_out, n * n * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+    error = cudaMemcpy(out.data(), d_out, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Memcpy of device's output to host failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
 
     // Free the memory on the device
     cudaFree(d_in);
