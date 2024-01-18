@@ -23,7 +23,8 @@ int main()
 
     // isingSeq(out, in, 4, 1);
     // isingCudaSeq(out, in, 10, 2, 2);
-    isingCuda(out, in, 10, 1, 5, 1);
+    isingCuda(out, in, 10, 1, 1, 5);
+    // isingCuda(out, in, 10, 1, 5);
 
     for (size_t i = 0; i < out.size(); i++)
     {
