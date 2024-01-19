@@ -1,15 +1,17 @@
 #include <iostream>
 #include "seq.hpp"
 
-void isingSeq(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const size_t n, const uint32_t k)
+void isingSeq(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32_t k)
 {
-    // check if in vector has the right dimensions
-    if (in.size() != n * n)
+    size_t n2 = in.size();
+    size_t n = (size_t)sqrt(n2);
+    // check if `in` vector has a perfect square size
+    if (ceil(sqrt(n2)) != floor(sqrt(n2)))
     {
         std::cout << "Error: input vector has wrong dimensions" << std::endl;
         return;
     }
-    out.resize(n * n);
+    out.resize(n2);
 
     for (size_t iter = 0; iter < k; iter++)
     {
@@ -19,11 +21,15 @@ void isingSeq(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const size_t 
             {
                 // calculate the index of the current element
                 size_t index = i * n + j;
+                size_t up = ((i - 1 + n) % n) * n + j;
+                size_t down = ((i + 1) % n) * n + j;
+                size_t left = i * n + (j - 1 + n) % n;
+                size_t right = i * n + (j + 1) % n;
 
-                uint8_t sum = in[index] + in[((i + 1) % n) * n + j] + in[((i - 1 + n) % n) * n + j] + in[i * n + (j + 1) % n] + in[i * n + (j - 1 + n) % n];
-                out[index] = sum > 2; // if majority is true (sum in [3,5]), out is true
+                uint8_t sum = in[index] + in[up] + in[down] + in[left] + in[right];
+                out[index] = sum > 2; // assign majority
             }
         }
-        in = out;
+        in = out; // copy the output to the new input
     }
 }

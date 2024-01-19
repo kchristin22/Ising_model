@@ -9,97 +9,124 @@ __global__ void isingModelBlocks(uint8_t *out, uint8_t *in, const size_t n, cons
     if (end > n2)
         end = n2;
 
-    // printf("gridDim.x: %d, blockIdx.x: %d, start: %ld, end: %ld\n", gridDim.x, blockIdx.x, start, end);
-
     for (size_t iter = 0; iter < k; iter++)
     {
         for (size_t i = start; i < end; i++)
         {
-            uint8_t sum = in[i] + in[(i + n) % n2] + in[(i - n + n2) % n2] + in[(i + 1) % n] + in[(i - 1 + n) % n];
-            out[i] = sum > 2; // if majority is true (sum in [3,5]), out is true
+            size_t up = (i - n + n2) % n2;
+            size_t down = (i + n) % n2;
+            size_t row = i / n;
+            size_t left = row * n + (i - 1 + n) % n;
+            size_t right = row * n + (i + 1) % n;
+            uint8_t sum = in[i] + in[up] + in[down] + in[left] + in[right];
+            out[i] = sum > 2; // assign the majority
         }
 
-        atomicAdd(blockCounter, 1);
+        // sync the running blocks
+        atomicAdd(blockCounter, 1); // this block has finished
+        __threadfence();            // ensure that threads reading the value of blockCounter from now on cannot see the previous value
 
-        while (*blockCounter < gridDim.x && *blockCounter != 0) // if blockCounter is 0, then all blocks have finished and one has initialized the counter to 0
-            __threadfence_block();                              // Ensure I have the latest value of blockCounter
+        while (*blockCounter < gridDim.x && *blockCounter != 0)
+            ; // if blockCounter is 0, then all blocks have finished and one has initialized the counter to 0
+
         blockCounter = 0;
 
-        memcpy(&in[start], &out[start], sizeof(uint8_t) * (end - start));
+        memcpy(&in[start], &out[start], sizeof(uint8_t) * (end - start)); // update input
+
+        // ensure that all threads have finished copying
+        atomicAdd(blockCounter, 1);
+        __threadfence();
+
+        while (*blockCounter < gridDim.x && *blockCounter != 0)
+            ;
+
+        blockCounter = 0;
     }
 }
 
-void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const size_t n, const uint32_t k, const uint32_t blocks)
+void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32_t k, uint32_t blocks)
 {
-    // check if in vector has the right dimensions
-    if (in.size() != n * n)
+    size_t n2 = in.size();
+    // check if `in` vector has a perfect square size
+    if (ceil(sqrt(n2)) != floor(sqrt(n2)))
     {
         std::cout << "Error: input vector has wrong dimensions" << std::endl;
         return;
     }
-    out.resize(n * n);
+    out.resize(n2);
 
-    // Allocate memory on the device
+    // Allocate memory on the device (GPU)
     uint8_t *d_in, *d_out;
-    cudaError_t error = cudaMalloc((void **)&d_in, n * n * sizeof(uint8_t));
+    cudaError_t error = cudaMalloc((void **)&d_in, n2 * sizeof(uint8_t));
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Malloc of d_in failed: %s\n", cudaGetErrorString(error));
         printf("Error: %d\n", error);
-        // Additional error handling if needed
+        return;
     }
-    error = cudaMalloc((void **)&d_out, n * n * sizeof(uint8_t));
+    error = cudaMalloc((void **)&d_out, n2 * sizeof(uint8_t));
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Malloc of d_out failed: %s\n", cudaGetErrorString(error));
         printf("Error: %d\n", error);
-        // Additional error handling if needed
+        return;
     }
 
-    uint32_t *blockCounter;
+    uint32_t *blockCounter; // used to sync the blocks
     error = cudaMalloc((void **)&blockCounter, sizeof(uint32_t));
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Malloc of blockCounter failed: %s\n", cudaGetErrorString(error));
         printf("Error: %d\n", error);
-        // Additional error handling if needed
     }
-    error = cudaMemset(blockCounter, 0, sizeof(uint32_t));
+    error = cudaMemset(blockCounter, 0, sizeof(uint32_t)); // initialize block counter to 0
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Memset of blockCounter failed: %s\n", cudaGetErrorString(error));
         printf("Error: %d\n", error);
-        // Additional error handling if needed
     }
-    
 
-    // Copy the input to the device
-    error = cudaMemcpy(d_in, in.data(), n * n * sizeof(uint8_t), cudaMemcpyHostToDevice);
+    // Copy the input from CPU to the device
+    error = cudaMemcpy(d_in, in.data(), n2 * sizeof(uint8_t), cudaMemcpyHostToDevice);
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Memcpy of d_in failed: %s\n", cudaGetErrorString(error));
         printf("Error: %d\n", error);
-        // Additional error handling if needed
+        return;
     }
 
-    size_t n2 = n * n;
-    uint32_t blockChunk = n2 / blocks;
-    uint32_t blockNum = blocks * blockChunk == n2 ? blocks : blocks + 1;
+    uint32_t blockChunk = n2 / blocks;                                   // number of elements each block will process
+    blocks = blocks * blockChunk == n2 ? blocks : blocks++; // the actual number of blocks may change but the total number of elements
+                                                                         // processed per block will be as expected
+                                                                         // there is no limit for the number of blocks
 
     // Launch the kernel
-    isingModelBlocks<<<blockNum, 1>>>(d_out, d_in, n, k, blockChunk, blockCounter);
-    
-    cudaError_t cudaStatus = cudaGetLastError();
-    if (cudaStatus != cudaSuccess)
+    isingModelBlocks<<<blocks, 1>>>(d_out, d_in, (size_t)sqrt(n2), k, blockChunk, blockCounter);
+    error = cudaGetLastError(); // Since no error was returned from all the previous cuda calls,
+                                // the last error must be from the kernel launch
+    if (error != cudaSuccess)
     {
-        fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
-        printf("Error: %d\n", cudaStatus);
-        // Additional error handling if needed
+        fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
     }
-    cudaDeviceSynchronize();
+
+    // Wait for the kernel to finish to avoid exiting the program prematurely
+    error = cudaDeviceSynchronize();
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Device synchronization failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
 
     // Copy the output back to the host
-    cudaMemcpy(out.data(), d_out, n * n * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+    error = cudaMemcpy(out.data(), d_out, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Memcpy of device's output to host failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
 
     // Free the memory on the device
     cudaFree(d_in);

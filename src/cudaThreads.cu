@@ -107,12 +107,12 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
 
     // Run the kernel
     isingModel<<<blocks, threads>>>(d_out, d_in, (size_t)sqrt(n2), k, blockCounter);
-    cudaError_t cudaStatus = cudaGetLastError(); // Since no error was returned from all the previous cuda calls,
+    error = cudaGetLastError(); // Since no error was returned from all the previous cuda calls,
                                                  // the last error must be from the kernel launch
-    if (cudaStatus != cudaSuccess)
+    if (error != cudaSuccess)
     {
-        fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
-        printf("Error: %d\n", cudaStatus);
+        fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
     }
 
     // Wait for the kernel to finish to avoid exiting the program prematurely

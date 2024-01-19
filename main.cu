@@ -3,14 +3,14 @@
 #include <cstdio>
 #include <unistd.h>
 #include "seq.hpp"
-#include "cudaSeq.cuh"
-#include "cudaBlocks.cuh"
 #include "cudaThreads.cuh"
+#include "cudaBlocks.cuh"
+#include "cudaThreadsShared.cuh"
 
 int main()
 {
-    std::vector<uint8_t> in(100);
-    std::vector<uint8_t> out(100);
+    std::vector<uint8_t> in(16);
+    std::vector<uint8_t> out(16);
     for (size_t i = 0; i < in.size(); i++)
     {
         in[i] = rand() % 2;
@@ -22,8 +22,8 @@ int main()
               << "out:" << std::endl;
 
     // isingSeq(out, in, 4, 1);
-    // isingCudaSeq(out, in, 10, 2, 2);
-    isingCuda(out, in, 10, 1, 1, 5);
+    isingCuda(out, in, 1);
+    // isingCuda(out, in, 10, 1, 1, 5);
     // isingCuda(out, in, 10, 1, 5);
 
     for (size_t i = 0; i < out.size(); i++)
