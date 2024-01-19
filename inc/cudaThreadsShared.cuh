@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <vector>
 
+#define MAX_BLOCKS 2147483647
+
 #define MAX_THREADS_PER_BLOCK 1024
 
 #define MAX_SHARED_PER_BLOCK 49152

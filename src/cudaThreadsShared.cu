@@ -113,7 +113,13 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
     uint32_t blockChunk = n2 / blocks;                      // number of elements each block will process
     blocks = blocks * blockChunk == n2 ? blocks : blocks++; // the actual number of blocks may change but the total number of elements
                                                             // processed per block will be as expected
-                                                            // there is no limit for the number of blocks
+
+    if (blocks > MAX_BLOCKS)
+    {
+        std::cout << "Error: too many blocks. Using " << MAX_BLOCKS << " blocks" << std::endl;
+        blocks = MAX_BLOCKS;
+        blockChunk = (uint32_t)ceil((double)n2 / blocks);
+    }
 
     if (threads > MAX_THREADS_PER_BLOCK)
     {

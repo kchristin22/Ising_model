@@ -95,10 +95,16 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
         return;
     }
 
-    uint32_t blockChunk = n2 / blocks;                                   // number of elements each block will process
+    uint32_t blockChunk = n2 / blocks;                      // number of elements each block will process
     blocks = blocks * blockChunk == n2 ? blocks : blocks++; // the actual number of blocks may change but the total number of elements
-                                                                         // processed per block will be as expected
-                                                                         // there is no limit for the number of blocks
+                                                            // processed per block will be as expected
+
+    if (blocks > MAX_BLOCKS)
+    {
+        std::cout << "Error: too many blocks. Using " << MAX_BLOCKS << " blocks" << std::endl;
+        blocks = MAX_BLOCKS;
+        blockChunk = (uint32_t)ceil((double)n2 / blocks);
+    }
 
     // Launch the kernel
     isingModelBlocks<<<blocks, 1>>>(d_out, d_in, (size_t)sqrt(n2), k, blockChunk, blockCounter);

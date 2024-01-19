@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <vector>
 
+#define MAX_BLOCKS 2147483647
+
 /* Kernel function: Each thread computes the evolution of a block of elements
  * @params:  out(output): state of the array after k iterations
  *           in(input): input array

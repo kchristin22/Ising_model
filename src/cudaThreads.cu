@@ -102,13 +102,18 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
     }
 
     // Calculate the number of blocks and threads needed to assign a single element to each thread
-    uint32_t blocks = (uint32_t)ceil((double)n2 / MAX_THREADS_PER_BLOCK); // there is no limit for the number of blocks
-    uint32_t threads = (uint32_t)ceil((double)n2 / blocks);               // distribute the elements evenly among the blocks
+    uint32_t blocks = (uint32_t)ceil((double)n2 / MAX_THREADS_PER_BLOCK);
+    if (blocks > MAX_BLOCKS)
+    {
+        std::cout << "Error: too many blocks needed for this input array" << std::endl;
+        return;
+    }
+    uint32_t threads = (uint32_t)ceil((double)n2 / blocks); // distribute the elements evenly among the blocks
 
     // Run the kernel
     isingModel<<<blocks, threads>>>(d_out, d_in, (size_t)sqrt(n2), k, blockCounter);
     error = cudaGetLastError(); // Since no error was returned from all the previous cuda calls,
-                                                 // the last error must be from the kernel launch
+                                // the last error must be from the kernel launch
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(error));
