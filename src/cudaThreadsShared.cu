@@ -13,9 +13,10 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
     __shared__ uint8_t s[MAX_SHARED_PER_BLOCK]; // max shared memory macro is defined in bytes which is the size of each element
     uint8_t *s_in = s;
     uint8_t *s_out = &s[blockChunk]; // s_in has blockChunk elements
-    memcpy(&s_in[start], &in[start], sizeof(uint8_t) * (end - start));
 
-    // ensure that all threads have finished copying before continuing
+    memcpy(&s_in[start], &in[start], sizeof(uint8_t) * (end - start)); // needed for the inter-block communication
+
+    // ensure that all threads have finished copying
     if (threadIdx.x == 0) // each block has at least one thread
     {
         atomicAdd(blockCounter, 1); // this block has finished
@@ -26,22 +27,26 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
 
         *blockCounter = 0;
     }
-    __syncthreads(); // other threads of the block wait for thread 0
+    __syncthreads(); // other threads wait for thread 0 to finish
 
     for (size_t iter = 0; iter < k; iter++)
     {
         for (size_t i = start; i < end; i++)
         {
             size_t up = (i - n + n2) % n2;
+            size_t in_up = up >= start && up < end ? s_in[up] : in[up];
             size_t down = (i + n) % n2;
+            size_t in_down = down >= start && down < end ? s_in[down] : in[down];
             size_t row = i / n;
             size_t left = row * n + (i - 1 + n) % n;
+            size_t in_left = left >= start && left < end ? s_in[left] : in[left];
             size_t right = row * n + (i + 1) % n;
-            uint8_t sum = s_in[i] + s_in[up] + s_in[down] + s_in[left] + s_in[right];
+            size_t in_right = right >= start && right < end ? s_in[right] : in[right];
+            uint8_t sum = s_in[i] + in_up + in_down + in_left + in_right;
             s_out[i] = sum > 2; // assign the majority
         }
 
-        // sync the running blocks before swapping the pointers
+        // ensure that all threads have finished reading before copying
         if (threadIdx.x == 0) // each block has at least one thread
         {
             atomicAdd(blockCounter, 1); // this block has finished
@@ -52,7 +57,22 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
 
             *blockCounter = 0;
         }
-        __syncthreads(); // other threads of the block wait for thread 0
+        __syncthreads(); // other threads wait for thread 0 to finish
+
+        memcpy(&in[start], &s_out[start], sizeof(uint8_t) * (end - start)); // needed for the inter-block communication
+
+        // ensure that all threads have finished reading before copying
+        if (threadIdx.x == 0) // each block has at least one thread
+        {
+            atomicAdd(blockCounter, 1); // this block has finished
+            __threadfence();            // ensure that threads reading the value of blockCounter from now on cannot see the previous value
+
+            while (*blockCounter < gridDim.x && *blockCounter != 0)
+                ; // if blockCounter is 0, then all blocks have finished and one has initialized the counter to 0
+
+            *blockCounter = 0;
+        }
+        __syncthreads(); // other threads wait for thread 0 to finish
 
         // swap the pointers
         uint8_t *temp = s_in;
@@ -149,6 +169,7 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
         printf("Error: %d\n", error);
         return;
     }
+    std::cout << "Kernel finished" << std::endl;
 
     // Copy the output back to the host
     error = cudaMemcpy(out.data(), d_out, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost);
