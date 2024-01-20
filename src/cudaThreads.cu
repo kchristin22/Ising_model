@@ -21,7 +21,7 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
         uint8_t sum = in[index] + in[up] + in[down] + in[left] + in[right];
         out[index] = sum > 2; // assign the majority
 
-        // sync the running blocks
+        // sync the running blocks before swapping the pointers
         if (threadIdx.x == 0) // each block has at least one thread
         {
             atomicAdd(blockCounter, 1); // this block has finished
@@ -34,20 +34,12 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
         }
         __syncthreads(); // other threads of the block wait for thread 0
 
-        in[index] = out[index]; // update input
-
-        if (threadIdx.x == 0) // ensure all threads have finished copying
-        {
-            atomicAdd(blockCounter, 1);
-            __threadfence();
-
-            while (*blockCounter < gridDim.x && *blockCounter != 0)
-                ;
-
-            *blockCounter = 0;
-        }
-        __syncthreads();
+        // swap input and output
+        uint8_t *temp = in;
+        in = out;
+        out = temp;
     }
+    out = in; // next input is the previous output (the last swap is not needed)
 }
 
 void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32_t k)

@@ -15,9 +15,21 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
     uint8_t *s_out = &s[blockChunk]; // s_in has blockChunk elements
     memcpy(&s_in[start], &in[start], sizeof(uint8_t) * (end - start));
 
+    // ensure that all threads have finished copying before continuing
+    if (threadIdx.x == 0) // each block has at least one thread
+    {
+        atomicAdd(blockCounter, 1); // this block has finished
+        __threadfence();            // ensure that threads reading the value of blockCounter from now on cannot see the previous value
+
+        while (*blockCounter < gridDim.x && *blockCounter != 0)
+            ; // if blockCounter is 0, then all blocks have finished and one has initialized the counter to 0
+
+        *blockCounter = 0;
+    }
+    __syncthreads(); // other threads of the block wait for thread 0
+
     for (size_t iter = 0; iter < k; iter++)
     {
-        __syncthreads(); // ensure all threads have finished copying
         for (size_t i = start; i < end; i++)
         {
             size_t up = (i - n + n2) % n2;
@@ -29,7 +41,7 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
             s_out[i] = sum > 2; // assign the majority
         }
 
-        // sync the running blocks
+        // sync the running blocks before swapping the pointers
         if (threadIdx.x == 0) // each block has at least one thread
         {
             atomicAdd(blockCounter, 1); // this block has finished
@@ -42,21 +54,13 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
         }
         __syncthreads(); // other threads of the block wait for thread 0
 
-        memcpy(&s_in[start], &s_out[start], sizeof(uint8_t) * (end - start));
-
-        if (threadIdx.x == 0) // ensure all threads have finished copying
-        {
-            atomicAdd(blockCounter, 1);
-            __threadfence();
-
-            while (*blockCounter < gridDim.x && *blockCounter != 0)
-                ;
-
-            *blockCounter = 0;
-        }
+        // swap the pointers
+        uint8_t *temp = s_in;
+        s_in = s_out;
+        s_out = temp;
     }
 
-    memcpy(&out[start], &s_out[start], sizeof(uint8_t) * (end - start)); // copy the result to the global memory
+    memcpy(&out[start], &s_in[start], sizeof(uint8_t) * (end - start)); // copy the result to the global memory (the last swap is not needed)
 }
 
 void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32_t k, uint32_t blocks, uint32_t threads)
