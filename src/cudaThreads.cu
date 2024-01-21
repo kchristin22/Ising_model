@@ -39,7 +39,6 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
         in = out;
         out = temp;
     }
-    out = in; // next input is the previous output (the last swap is not needed)
 }
 
 void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32_t k)
@@ -122,7 +121,10 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
     }
 
     // Copy the output back to the host
-    error = cudaMemcpy(out.data(), d_out, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+    if (k % 2 == 0)
+        error = cudaMemcpy(out.data(), d_in, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+    else
+        error = cudaMemcpy(out.data(), d_out, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost);
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Memcpy of device's output to host failed: %s\n", cudaGetErrorString(error));

@@ -29,14 +29,13 @@ __global__ void isingModelBlocks(uint8_t *out, uint8_t *in, const size_t n, cons
         while (*blockCounter < gridDim.x && *blockCounter != 0)
             ; // if blockCounter is 0, then all blocks have finished and one has initialized the counter to 0
 
-        blockCounter = 0;
+        *blockCounter = 0;
 
         // swap the pointers
         uint8_t *temp = in;
         in = out;
         out = temp;
     }
-    out = in; // next input is the previous output (the last swap is not needed)
 }
 
 void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32_t k, uint32_t blocks)
@@ -90,9 +89,9 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
         return;
     }
 
-    uint32_t blockChunk = n2 / blocks;                      // number of elements each block will process
-    blocks = blocks * blockChunk == n2 ? blocks : blocks++; // the actual number of blocks may change but the total number of elements
-                                                            // processed per block will be as expected
+    uint32_t blockChunk = n2 / blocks;                // number of elements each block will process
+    blocks = (uint32_t)ceil((double)n2 / blockChunk); // the actual number of blocks may change but the total number of elements
+                                                      // processed per block will be as expected
 
     if (blocks > MAX_BLOCKS)
     {
@@ -121,7 +120,10 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
     }
 
     // Copy the output back to the host
-    error = cudaMemcpy(out.data(), d_out, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+    if (k % 2 == 0)
+        error = cudaMemcpy(out.data(), d_in, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+    else
+        error = cudaMemcpy(out.data(), d_out, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost);
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Memcpy of device's output to host failed: %s\n", cudaGetErrorString(error));
