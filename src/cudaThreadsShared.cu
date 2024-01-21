@@ -5,7 +5,8 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
 {
     size_t n2 = n * n;
     size_t threadChunk = blockChunk / blockDim.x; // not ceil to ensure that the total number of elements processed per block is not greater than blockChunk
-    size_t start = blockIdx.x * blockChunk + threadIdx.x * threadChunk;
+    size_t blockChunkStart = blockIdx.x * blockChunk;
+    size_t start = blockChunkStart + threadIdx.x * threadChunk;
     size_t end = threadIdx.x == blockDim.x - 1 ? start + threadChunk + (blockChunk - blockDim.x * threadChunk) : start + threadChunk; // last thread of the block processes the remaining elements
     if (end > n2)
         end = n2;
@@ -14,36 +15,39 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
     uint8_t *s_in = s;
     uint8_t *s_out = &s[blockChunk]; // s_in has blockChunk elements
 
-    memcpy(&s_in[start], &in[start], sizeof(uint8_t) * (end - start)); // needed for the inter-block communication
+    if (blockChunkStart == 0)
+        blockChunkStart = end; // needed for the indexing of the shared memory
 
-    // ensure that all threads have finished copying
-    if (threadIdx.x == 0) // each block has at least one thread
-    {
-        atomicAdd(blockCounter, 1); // this block has finished
-        __threadfence();            // ensure that threads reading the value of blockCounter from now on cannot see the previous value
+    memcpy(&s_in[start % blockChunkStart], &in[start], sizeof(uint8_t) * (end - start)); // needed for the inter-block communication
 
-        while (*blockCounter < gridDim.x && *blockCounter != 0)
-            ; // if blockCounter is 0, then all blocks have finished and one has initialized the counter to 0
+    __syncthreads(); // ensure that all threads have finished copying
 
-        *blockCounter = 0;
-    }
-    __syncthreads(); // other threads wait for thread 0 to finish
+    // printf("blockChunkStart: %ld, start: %ld, end: %ld\n", blockChunkStart, start, end);
+    printf("blockIdx.x: %d, threadIdx.x: %d, start: %ld, end: %ld\n", blockIdx.x, threadIdx.x, start, end);
 
     for (size_t iter = 0; iter < k; iter++)
     {
         for (size_t i = start; i < end; i++)
         {
             size_t up = (i - n + n2) % n2;
-            size_t in_up = up >= start && up < end ? s_in[up] : in[up];
+            // if (i == 33)
+            // printf("up: %ld, in[%ld] = %d\n", up, up, in[up]);
+            uint8_t in_up = up >= start && up < end ? s_in[up % blockChunkStart] : in[up];
+            // if (i == 33)
+            // printf("up >= start && up < end = %d, in_up: %d, in[up]: %d\n", up >= start && up < end, in_up, in[up]);
             size_t down = (i + n) % n2;
-            size_t in_down = down >= start && down < end ? s_in[down] : in[down];
+            uint8_t in_down = down >= start && down < end ? s_in[down % blockChunkStart] : in[down];
             size_t row = i / n;
             size_t left = row * n + (i - 1 + n) % n;
-            size_t in_left = left >= start && left < end ? s_in[left] : in[left];
+            uint8_t in_left = left >= start && left < end ? s_in[left % blockChunkStart] : in[left];
             size_t right = row * n + (i + 1) % n;
-            size_t in_right = right >= start && right < end ? s_in[right] : in[right];
-            uint8_t sum = s_in[i] + in_up + in_down + in_left + in_right;
-            s_out[i] = sum > 2; // assign the majority
+            uint8_t in_right = right >= start && right < end ? s_in[right % blockChunkStart] : in[right];
+            if (i == 33)
+                printf("up: %d, down: %d, left: %d, right: %d\n", in_up, in_down, in_left, in_right);
+            uint8_t sum = s_in[i % blockChunkStart] + in_up + in_down + in_left + in_right;
+            if (i == 33)
+                printf("sum: %d\n", sum);
+            s_out[i % blockChunkStart] = sum > 2; // assign the majority
         }
 
         // ensure that all threads have finished reading before copying
@@ -51,15 +55,17 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
         {
             atomicAdd(blockCounter, 1); // this block has finished
             __threadfence();            // ensure that threads reading the value of blockCounter from now on cannot see the previous value
+            // printf("blockCounter: %d, gridDim.x: %d\n", *blockCounter, gridDim.x);
 
             while (*blockCounter < gridDim.x && *blockCounter != 0)
                 ; // if blockCounter is 0, then all blocks have finished and one has initialized the counter to 0
 
             *blockCounter = 0;
+            // printf("blockCounter set to zero\n");
         }
         __syncthreads(); // other threads wait for thread 0 to finish
 
-        memcpy(&in[start], &s_out[start], sizeof(uint8_t) * (end - start)); // needed for the inter-block communication
+        memcpy(&in[start], &s_out[start % blockChunkStart], sizeof(uint8_t) * (end - start)); // needed for the inter-block communication
 
         // ensure that all threads have finished reading before copying
         if (threadIdx.x == 0) // each block has at least one thread
@@ -72,15 +78,20 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
 
             *blockCounter = 0;
         }
+
         __syncthreads(); // other threads wait for thread 0 to finish
 
         // swap the pointers
         uint8_t *temp = s_in;
         s_in = s_out;
         s_out = temp;
-    }
 
-    memcpy(&out[start], &s_in[start], sizeof(uint8_t) * (end - start)); // copy the result to the global memory (the last swap is not needed)
+        __syncthreads(); // ensure that all threads have finished swapping
+    }
+    // for (size_t i = start; i < end; i++)
+    // printf("in[%ld]: %d\n", i, in[i]);
+
+    memcpy(&out[start], &s_in[start % blockChunkStart], sizeof(uint8_t) * (end - start)); // copy the result to the global memory (the last swap is not needed)
 }
 
 void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32_t k, uint32_t blocks, uint32_t threads)
@@ -134,9 +145,9 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
         return;
     }
 
-    uint32_t blockChunk = n2 / blocks;                      // number of elements each block will process
-    blocks = blocks * blockChunk == n2 ? blocks : blocks++; // the actual number of blocks may change but the total number of elements
-                                                            // processed per block will be as expected
+    uint32_t blockChunk = n2 / blocks;                // number of elements each block will process
+    blocks = (uint32_t)ceil((double)n2 / blockChunk); // the actual number of blocks may change but the total number of elements
+                                                      // processed per block will be as expected
 
     if (blocks > MAX_BLOCKS)
     {
@@ -144,10 +155,17 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
         blocks = MAX_BLOCKS;
         blockChunk = (uint32_t)ceil((double)n2 / blocks);
     }
+    if (blockChunk > MAX_SHARED_PER_BLOCK)
+    {
+        std::cout << "Error: too many elements per block. Use more blocks." << std::endl;
+        return;
+    }
+
+    printf("blocks: %d, blockChunk: %d\n", blocks, blockChunk);
 
     if (threads > MAX_THREADS_PER_BLOCK)
     {
-        std::cout << "Error: too many threads per block. Using 1024 threads per block" << std::endl;
+        std::cout << "Error: too many threads per block. Using " << MAX_THREADS_PER_BLOCK << " threads per block" << std::endl;
         threads = MAX_THREADS_PER_BLOCK;
     }
 

@@ -48,6 +48,15 @@
     "typeinfo": "cpp",
     "iostream": "cpp",
     "__locale": "cpp",
-    "ios": "cpp"
+    "ios": "cpp",
+    "chrono": "cpp",
+    "cstring": "cpp",
+    "ctime": "cpp",
+    "ratio": "cpp",
+    "fstream": "cpp",
+    "istream": "cpp",
+    "sstream": "cpp",
+    "bitset": "cpp",
+    "__nullptr": "cpp"
   }
 }
