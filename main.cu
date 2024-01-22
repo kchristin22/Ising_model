@@ -95,13 +95,13 @@ int main(int argc, char **argv)
 
     isingSeq(out, in, k);
     std::cout << "out:" << std::endl;
-    for (size_t i = 0; i < out.size(); i++)
-    {
-        if (i != 0 && i % ((size_t)sqrt(out.size())) == 0)
-            std::cout << std::endl;
-        std::cout << unsigned(out[i]) << " ";
-    }
-    std::cout << std::endl;
+    // for (size_t i = 0; i < out.size(); i++)
+    // {
+    //     if (i != 0 && i % ((size_t)sqrt(out.size())) == 0)
+    //         std::cout << std::endl;
+    //     std::cout << unsigned(out[i]) << " ";
+    // }
+    // std::cout << std::endl;
 
     in = in2;
     isingCuda(out2, in, k, blocks);
@@ -109,14 +109,14 @@ int main(int argc, char **argv)
     std::cout << "Seq and Cuda blocks are equal: " << (out == out2) << std::endl;
     in = in2;
 
-    std::cout << "out:" << std::endl;
-    for (size_t i = 0; i < out.size(); i++)
-    {
-        if (i != 0 && i % ((size_t)sqrt(out.size())) == 0)
-            std::cout << std::endl;
-        std::cout << unsigned(out2[i]) << " ";
-    }
-    std::cout << std::endl;
+    // std::cout << "out:" << std::endl;
+    // for (size_t i = 0; i < out.size(); i++)
+    // {
+    //     if (i != 0 && i % ((size_t)sqrt(out.size())) == 0)
+    //         std::cout << std::endl;
+    //     std::cout << unsigned(out2[i]) << " ";
+    // }
+    // std::cout << std::endl;
 
     isingCuda(out2, in, k);
     std::cout << "Seq and Cuda threads are equal: " << (out == out2) << std::endl;
@@ -138,14 +138,14 @@ int main(int argc, char **argv)
     std::cout << "Seq and Cuda threads shared are equal: " << (out == out2) << std::endl;
     in = in2;
 
-    std::cout << "out:" << std::endl;
-    for (size_t i = 0; i < out2.size(); i++)
-    {
-        if (i != 0 && i % ((size_t)sqrt(out2.size())) == 0)
-            std::cout << std::endl;
-        std::cout << unsigned(out2[i]) << " ";
-    }
-    std::cout << std::endl;
+    // std::cout << "out:" << std::endl;
+    // for (size_t i = 0; i < out2.size(); i++)
+    // {
+    //     if (i != 0 && i % ((size_t)sqrt(out2.size())) == 0)
+    //         std::cout << std::endl;
+    //     std::cout << unsigned(out2[i]) << " ";
+    // }
+    // std::cout << std::endl;
 
     // struct timeval start, end;
     // gettimeofday(&start, NULL);
