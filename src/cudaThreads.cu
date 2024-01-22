@@ -24,13 +24,23 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
         // sync the running blocks before swapping the pointers
         if (threadIdx.x == 0) // each block has at least one thread
         {
-            atomicAdd(blockCounter, 1); // this block has finished
-            __threadfence();            // ensure that threads reading the value of blockCounter from now on cannot see the previous value
+            blockCounter[blockIdx.x] = 0; // initialize this block's value to 0
+            blockCounter[blockIdx.x] = 1; // this block has finished
+            __threadfence();              // ensure that threads reading the value of blockCounter from now on cannot see the previous value
 
-            while (*blockCounter < gridDim.x && *blockCounter != 0)
-                ; // if blockCounter is 0, then all blocks have finished and one has initialized the counter to 0
-
-            *blockCounter = 0;
+            bool allBlocksFinished = false;
+            while (!allBlocksFinished)
+            {
+                allBlocksFinished = true;
+                for (size_t i = 0; i < gridDim.x; i++) // check the value of each block in the grid
+                {
+                    if (blockCounter[i] == 0)
+                    {
+                        allBlocksFinished = false;
+                        break;
+                    }
+                }
+            }
         }
         __syncthreads(); // other threads of the block wait for thread 0
 
@@ -69,20 +79,6 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
         return;
     }
 
-    uint32_t *blockCounter; // used to sync the blocks
-    error = cudaMalloc((void **)&blockCounter, sizeof(uint32_t));
-    if (error != cudaSuccess)
-    {
-        fprintf(stderr, "Malloc of blockCounter failed: %s\n", cudaGetErrorString(error));
-        printf("Error: %d\n", error);
-    }
-    error = cudaMemset(blockCounter, 0, sizeof(uint32_t)); // initialize block counter to 0
-    if (error != cudaSuccess)
-    {
-        fprintf(stderr, "Memset of blockCounter failed: %s\n", cudaGetErrorString(error));
-        printf("Error: %d\n", error);
-    }
-
     // Copy the input from CPU to the device
     error = cudaMemcpy(d_in, in.data(), n2 * sizeof(uint8_t), cudaMemcpyHostToDevice);
     if (error != cudaSuccess)
@@ -100,6 +96,20 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
         return;
     }
     uint32_t threads = (uint32_t)ceil((double)n2 / blocks); // distribute the elements evenly among the blocks
+
+    uint32_t *blockCounter; // used to sync the blocks
+    error = cudaMalloc((void **)&blockCounter, blocks * sizeof(uint32_t));
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Malloc of blockCounter failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+    }
+    error = cudaMemset(blockCounter, 0, blocks * sizeof(uint32_t)); // initialize block counter to 0
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Memset of blockCounter failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+    }
 
     // Run the kernel
     isingModel<<<blocks, threads>>>(d_out, d_in, (size_t)sqrt(n2), k, blockCounter);

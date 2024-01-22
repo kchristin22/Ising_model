@@ -23,13 +23,25 @@ __global__ void isingModelBlocks(uint8_t *out, uint8_t *in, const size_t n, cons
         }
 
         // sync the running blocks before swapping the pointers
-        atomicAdd(blockCounter, 1); // this block has finished
-        __threadfence();            // ensure that threads reading the value of blockCounter from now on cannot see the previous value
+        // each block has at least one thread
 
-        while (*blockCounter < gridDim.x && *blockCounter != 0)
-            ; // if blockCounter is 0, then all blocks have finished and one has initialized the counter to 0
+        blockCounter[blockIdx.x] = 0; // initialize this block's value to 0
+        blockCounter[blockIdx.x] = 1; // this block has finished
+        __threadfence();              // ensure that threads reading the value of blockCounter from now on cannot see the previous value
 
-        *blockCounter = 0;
+        bool allBlocksFinished = false;
+        while (!allBlocksFinished)
+        {
+            allBlocksFinished = true;
+            for (size_t i = 0; i < gridDim.x; i++) // check the value of each block in the grid
+            {
+                if (blockCounter[i] == 0)
+                {
+                    allBlocksFinished = false;
+                    break;
+                }
+            }
+        }
 
         // swap the pointers
         uint8_t *temp = in;
@@ -67,13 +79,13 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
     }
 
     uint32_t *blockCounter; // used to sync the blocks
-    error = cudaMalloc((void **)&blockCounter, sizeof(uint32_t));
+    error = cudaMalloc((void **)&blockCounter, blocks * sizeof(uint32_t));
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Malloc of blockCounter failed: %s\n", cudaGetErrorString(error));
         printf("Error: %d\n", error);
     }
-    error = cudaMemset(blockCounter, 0, sizeof(uint32_t)); // initialize block counter to 0
+    error = cudaMemset(blockCounter, 0, blocks * sizeof(uint32_t)); // initialize block counter to 0
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Memset of blockCounter failed: %s\n", cudaGetErrorString(error));
