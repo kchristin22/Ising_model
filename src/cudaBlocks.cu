@@ -89,9 +89,19 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
         return;
     }
 
-    uint32_t blockChunk = n2 / blocks;                // number of elements each block will process
-    blocks = (uint32_t)ceil((double)n2 / blockChunk); // the actual number of blocks may change but the total number of elements
-                                                      // processed per block will be as expected
+    uint32_t blockChunk;
+    if (blocks > n2)
+    {
+        std::cout << "No need for that many blocks. Using " << n2 << " blocks" << std::endl;
+        blocks = n2;
+        blockChunk = 1;
+    }
+    else
+    {
+        blockChunk = n2 / blocks;                         // number of elements each block will process
+        blocks = (uint32_t)ceil((double)n2 / blockChunk); // the actual number of blocks may change but the total number of elements
+                                                          // processed per block will be as expected
+    }
 
     if (blocks > MAX_BLOCKS)
     {
