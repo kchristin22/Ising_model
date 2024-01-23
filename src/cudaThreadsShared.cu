@@ -49,9 +49,9 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
         memcpy(&out[start], &s_out[start - blockStart], sizeof(uint8_t) * (end - start)); // needed for the inter-block communication
 
         // ensure that all threads have finished copying to global memory
-        // g.sync();
+        g.sync();
 
-        // /* Without cooperative groups version
+        /* Without cooperative groups version
 
         if (threadIdx.x == 0) // each block has at least one thread
         {
@@ -75,7 +75,7 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
         }
         __syncthreads(); // other threads wait for thread 0 to finish
 
-        // */
+        */
 
         // swap the pointers
         uint8_t *temp = s_in;
@@ -191,15 +191,15 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
     void *kernelArgs[] = {&d_out, &d_in, &n, (void *)&k, &blockChunk, &blockCounter, &allBlocksFinished};
 
     // Launch the kernel
-    // error = cudaLaunchCooperativeKernel((void *)isingModel, blocks, threads, (void **)kernelArgs, blockChunk * 2 * sizeof(uint8_t));
+    error = cudaLaunchCooperativeKernel((void *)isingModel, blocks, threads, (void **)kernelArgs, blockChunk * 2 * sizeof(uint8_t));
 
-    // /* Or if your device doesn't support cooperative groups
+    /* Or if your device doesn't support cooperative groups
 
     isingModel<<<blocks, threads, blockChunk * 2 * sizeof(uint8_t)>>>(d_out, d_in, (size_t)sqrt(n2), k, blockChunk, blockCounter, allBlocksFinished);
     error = cudaGetLastError(); // Since no error was returned from all the previous cuda calls,
                                 // the last error must be from the kernel launch
 
-    // */
+    */
 
     if (error != cudaSuccess)
     {

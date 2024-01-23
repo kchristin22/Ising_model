@@ -1,4 +1,5 @@
 #include <iostream>
+#include <cooperative_groups.h>
 #include "cudaBlocks.cuh"
 
 __global__ void isingModelBlocks(uint8_t *out, uint8_t *in, const size_t n, const uint32_t k, const uint32_t blockChunk, uint32_t *blockCounter, bool *allBlocksFinished)
@@ -8,6 +9,8 @@ __global__ void isingModelBlocks(uint8_t *out, uint8_t *in, const size_t n, cons
     size_t end = start + blockChunk;
     if (end > n2)
         end = n2;
+
+    cooperative_groups::grid_group g = cooperative_groups::this_grid(); // used for the inter-block communication
 
     for (size_t iter = 0; iter < k; iter++)
     {
@@ -23,6 +26,10 @@ __global__ void isingModelBlocks(uint8_t *out, uint8_t *in, const size_t n, cons
         }
 
         // sync the running blocks before swapping the pointers
+        g.sync();
+
+        /* Without cooperative groups version
+
         atomicAdd(blockCounter, 1); // this block has finished
         __threadfence();            // ensure that threads reading the value of blockCounter from now on cannot see the previous value
 
@@ -40,6 +47,8 @@ __global__ void isingModelBlocks(uint8_t *out, uint8_t *in, const size_t n, cons
         }
         *blockCounter = 0; // re-set this block's value to 0
         __threadfence();
+
+        */
 
         // swap the pointers
         uint8_t *temp = in;
@@ -134,8 +143,22 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
         fprintf(stderr, "Memset of allBlocksFinished failed: %s\n", cudaGetErrorString(error));
         printf("Error: %d\n", error);
     }
+
+    // Set arguments for the kernel
+    size_t n = (size_t)sqrt(n2);
+    void *kernelArgs[] = {&d_out, &d_in, &n, (void *)&k, &blockChunk, &blockCounter, &allBlocksFinished};
+
     // Launch the kernel
+    error = cudaLaunchCooperativeKernel((void *)isingModelBlocks, blocks, 1, (void **)kernelArgs);
+
+    /* Or if your device doesn't support cooperative groups
+
     isingModelBlocks<<<blocks, 1>>>(d_out, d_in, (size_t)sqrt(n2), k, blockChunk, blockCounter, allBlocksFinished);
+    error = cudaGetLastError(); // Since no error was returned from all the previous cuda calls,
+                                // the last error must be from the kernel launch
+
+    */
+
     error = cudaGetLastError(); // Since no error was returned from all the previous cuda calls,
                                 // the last error must be from the kernel launch
     if (error != cudaSuccess)

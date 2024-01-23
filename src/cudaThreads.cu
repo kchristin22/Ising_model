@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cmath>
+#include <cooperative_groups.h>
 #include "cudaThreads.cuh"
 
 __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint32_t k, uint32_t *blockCounter, bool *allBlocksFinished)
@@ -16,12 +17,18 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
     size_t left = row * n + (index - 1 + n) % n;
     size_t right = row * n + (index + 1) % n;
 
+    cooperative_groups::grid_group g = cooperative_groups::this_grid(); // used for the inter-block communication
+
     for (size_t iter = 0; iter < k; iter++)
     {
         uint8_t sum = in[index] + in[up] + in[down] + in[left] + in[right];
         out[index] = sum > 2; // assign the majority
 
         // sync the running blocks before swapping the pointers
+        g.sync();
+
+        /* Without cooperative groups version
+
         if (threadIdx.x == 0) // each block has at least one thread
         {
             atomicAdd(blockCounter, 1); // this block has finished
@@ -43,6 +50,8 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
             __threadfence();
         }
         __syncthreads(); // other threads wait for thread 0 to finish
+
+        */
 
         // swap input and output
         uint8_t *temp = in;
@@ -126,10 +135,21 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
         printf("Error: %d\n", error);
     }
 
-    // Run the kernel
+    // Set arguments for the kernel
+    size_t n = (size_t)sqrt(n2);
+    void *kernelArgs[] = {&d_out, &d_in, &n, (void *)&k, &blockCounter, &allBlocksFinished};
+
+    // Launch the kernel
+    error = cudaLaunchCooperativeKernel((void *)isingModel, blocks, threads, (void **)kernelArgs);
+
+    /* Or if your device doesn't support cooperative groups
+
     isingModel<<<blocks, threads>>>(d_out, d_in, (size_t)sqrt(n2), k, blockCounter, allBlocksFinished);
     error = cudaGetLastError(); // Since no error was returned from all the previous cuda calls,
                                 // the last error must be from the kernel launch
+
+    */
+
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(error));
