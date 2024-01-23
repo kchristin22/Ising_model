@@ -16,7 +16,7 @@
  *           k(input): number of iterations
  *           blockCounter(input): number of blocks that have been executed (used for block syncing)
  */
-__global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint32_t k, uint32_t *blockCounter, uint8_t *allBlocksFinished);
+__global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint32_t k, uint32_t *blockCounter, bool *allBlocksFinished);
 
 /* Wrapper function for the kernel
  * @params:  out(output): state of the array after k iterations

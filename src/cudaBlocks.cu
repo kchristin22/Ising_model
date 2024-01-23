@@ -1,7 +1,7 @@
 #include <iostream>
 #include "cudaBlocks.cuh"
 
-__global__ void isingModelBlocks(uint8_t *out, uint8_t *in, const size_t n, const uint32_t k, const uint32_t blockChunk, uint32_t *blockCounter, uint8_t *allBlocksFinished)
+__global__ void isingModelBlocks(uint8_t *out, uint8_t *in, const size_t n, const uint32_t k, const uint32_t blockChunk, uint32_t *blockCounter, bool *allBlocksFinished)
 {
     size_t n2 = n * n;
     size_t start = blockIdx.x * blockChunk;
@@ -23,29 +23,22 @@ __global__ void isingModelBlocks(uint8_t *out, uint8_t *in, const size_t n, cons
         }
 
         // sync the running blocks before swapping the pointers
-        blockCounter[blockIdx.x] = 1; // this block has finished
-        __threadfence();              // ensure that threads reading the value of blockCounter from now on cannot see the previous value
+        atomicAdd(blockCounter, 1); // this block has finished
+        __threadfence();            // ensure that threads reading the value of blockCounter from now on cannot see the previous value
 
-        *allBlocksFinished = 0;
+        *allBlocksFinished = false;
         __threadfence();
         while (!(*allBlocksFinished))
         {
-            if (blockIdx.x == 0) // there's at least one block
-            {
-                for (size_t i = 0; i < gridDim.x; i++)
-                {
-                    if (blockCounter[i] == 0)
-                        break;
-                    if (i == gridDim.x - 1)
-                    {
-                        *allBlocksFinished = 1;
-                        __threadfence(); // update the value of allBlocksFinished
-                    }
-                }
-            }
             __threadfence(); // rest of the blocks load the new value of allBlocksFinished
+
+            if (*blockCounter == gridDim.x)
+            {
+                *allBlocksFinished = true;
+                __threadfence(); // update the value of allBlocksFinished
+            }
         }
-        blockCounter[blockIdx.x] = 0; // re-set this block's value to 0
+        *blockCounter = 0; // re-set this block's value to 0
         __threadfence();
 
         // swap the pointers
@@ -84,13 +77,13 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
     }
 
     uint32_t *blockCounter; // used to sync the blocks
-    error = cudaMalloc((void **)&blockCounter, blocks * sizeof(uint32_t));
+    error = cudaMalloc((void **)&blockCounter, sizeof(uint32_t));
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Malloc of blockCounter failed: %s\n", cudaGetErrorString(error));
         printf("Error: %d\n", error);
     }
-    error = cudaMemset(blockCounter, 0, blocks * sizeof(uint32_t)); // initialize block counter to 0
+    error = cudaMemset(blockCounter, 0, sizeof(uint32_t)); // initialize block counter to 0
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Memset of blockCounter failed: %s\n", cudaGetErrorString(error));
@@ -128,10 +121,19 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
     }
 
     // Allocate memory for the flag that indicates if all blocks have finished
-    uint8_t *allBlocksFinished;
-    cudaMalloc((void **)&allBlocksFinished, sizeof(uint8_t));
-    cudaMemset(allBlocksFinished, 0, sizeof(uint8_t));
-
+    bool *allBlocksFinished;
+    error = cudaMalloc((void **)&allBlocksFinished, sizeof(bool));
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Malloc of allBlocksFinished failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+    }
+    error = cudaMemset(allBlocksFinished, false, sizeof(bool));
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Memset of allBlocksFinished failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+    }
     // Launch the kernel
     isingModelBlocks<<<blocks, 1>>>(d_out, d_in, (size_t)sqrt(n2), k, blockChunk, blockCounter, allBlocksFinished);
     error = cudaGetLastError(); // Since no error was returned from all the previous cuda calls,
