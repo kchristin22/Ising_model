@@ -145,7 +145,7 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
         blocks = MAX_BLOCKS;
         blockChunk = (uint32_t)ceil((double)n2 / blocks);
     }
-    if (blockChunk > MAX_SHARED_PER_BLOCK)
+    if (2 * blockChunk > MAX_SHARED_PER_BLOCK)
     {
         std::cout << "Error: too many elements per block. Use more blocks." << std::endl;
         return;

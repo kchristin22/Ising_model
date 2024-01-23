@@ -99,7 +99,7 @@ int main(int argc, char **argv)
     in2 = in;
 
     isingSeq(out, in, k);
-    std::cout << "out:" << std::endl;
+    // std::cout << "out:" << std::endl;
     // for (size_t i = 0; i < out.size(); i++)
     // {
     //     if (i != 0 && i % ((size_t)sqrt(out.size())) == 0)
@@ -123,13 +123,17 @@ int main(int argc, char **argv)
     // }
     // std::cout << std::endl;
 
-    isingCuda(out2, in, k);
+    // isingCuda(out2, in, k);
     std::cout << "Seq and Cuda threads are equal: " << (out == out2) << std::endl;
     in = in2;
 
+    struct timeval start, end;
+    gettimeofday(&start, NULL);
     isingCudaGen(out2, in, k, blocks, threadsPerBlock);
+    gettimeofday(&end, NULL);
     std::cout << "Seq and Cuda threads shared gen are equal: " << (out == out2) << std::endl;
     in = in2;
+    std::cout << "Time gen: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
     // std::cout << "out:" << std::endl;
     // for (size_t i = 0; i < out2.size(); i++)
     // {
@@ -139,9 +143,12 @@ int main(int argc, char **argv)
     // }
     // std::cout << std::endl;
 
+    gettimeofday(&start, NULL);
     isingCuda(out2, in, k, blocks, threadsPerBlock);
+    gettimeofday(&end, NULL);
     std::cout << "Seq and Cuda threads shared are equal: " << (out == out2) << std::endl;
     in = in2;
+    std::cout << "Time: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
 
     // std::cout << "out:" << std::endl;
     // for (size_t i = 0; i < out2.size(); i++)

@@ -181,4 +181,5 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
     cudaFree(d_in);
     cudaFree(d_out);
     cudaFree(blockCounter);
+    cudaFree(allBlocksFinished);
 }
