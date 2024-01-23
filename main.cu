@@ -17,6 +17,11 @@ int main(int argc, char **argv)
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, device);
 
+    // int dev = 0;
+    // int supportsCoopLaunch = 0;
+    // cudaDeviceGetAttribute(&supportsCoopLaunch, cudaDevAttrCooperativeLaunch, dev);
+    // std::cout << "Cooperative launch support: " << supportsCoopLaunch << std::endl;
+
     // printf("Max grid size memory per block: %d bytes\n", prop.maxGridSize[0]);
 
     uint8_t version; // enum
@@ -83,11 +88,11 @@ int main(int argc, char **argv)
     for (size_t i = 0; i < in.size(); i++)
     {
         in[i] = rand() % 2;
-        if (i != 0 && i % ((size_t)sqrt(in.size())) == 0)
-            std::cout << std::endl;
-        std::cout << unsigned(in[i]) << " ";
+        // if (i != 0 && i % ((size_t)sqrt(in.size())) == 0)
+        //     std::cout << std::endl;
+        // std::cout << unsigned(in[i]) << " ";
     }
-    std::cout << std::endl;
+    // std::cout << std::endl;
 
     std::vector<uint8_t> in2(n * n);
     std::vector<uint8_t> out2(n * n);

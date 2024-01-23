@@ -1,4 +1,5 @@
 #include <iostream>
+#include <cooperative_groups.h>
 #include "cudaThreadsShared.cuh"
 
 __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint32_t k, const uint32_t blockChunk, uint32_t *blockCounter, uint8_t *allBlocksFinished)
@@ -25,6 +26,8 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
 
     __syncthreads(); // ensure that all threads have finished copying
 
+    cooperative_groups::grid_group g = cooperative_groups::this_grid(); // used for the inter-block communication
+
     for (size_t iter = 0; iter < k; iter++)
     {
         for (size_t i = start; i < end; i++)
@@ -46,6 +49,10 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
         memcpy(&out[start], &s_out[start - blockStart], sizeof(uint8_t) * (end - start)); // needed for the inter-block communication
 
         // ensure that all threads have finished copying to global memory
+        g.sync();
+
+        /* Without cooperative groups version
+
         if (threadIdx.x == 0) // each block has at least one thread
         {
             blockCounter[blockIdx.x] = 1; // this block has finished
@@ -72,6 +79,8 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
             __threadfence();
         }
         __syncthreads(); // other threads wait for thread 0 to finish
+
+        */
 
         // swap the pointers
         uint8_t *temp = s_in;
@@ -172,10 +181,21 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
     cudaMalloc((void **)&allBlocksFinished, sizeof(uint8_t));
     cudaMemset(allBlocksFinished, 0, sizeof(uint8_t));
 
+    // Set arguments for the kernel
+    size_t n = (size_t)sqrt(n2);
+    void *kernelArgs[] = {&d_out, &d_in, &n, (void *)&k, &blockChunk, &blockCounter, &allBlocksFinished};
+
     // Launch the kernel
-    isingModel<<<blocks, threads, blockChunk * 2 * sizeof(uint8_t)>>>(d_out, d_in, (size_t)sqrt(n2), k, blockChunk, blockCounter, allBlocksFinished);
-    error = cudaGetLastError(); // Since no error was returned from all the previous cuda calls,
-    // the last error must be from the kernel launch
+    error = cudaLaunchCooperativeKernel((void *)isingModel, blocks, threads, (void **)kernelArgs, blockChunk * 2 * sizeof(uint8_t));
+
+    /* Or if your device doesn't support cooperative groups
+
+     isingModel<<<blocks, threads, blockChunk * 2 * sizeof(uint8_t)>>>(d_out, d_in, (size_t)sqrt(n2), k, blockChunk, blockCounter, allBlocksFinished);
+     error = cudaGetLastError(); // Since no error was returned from all the previous cuda calls,
+                                // the last error must be from the kernel launch
+
+    */
+
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(error));
@@ -206,4 +226,5 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
     cudaFree(d_in);
     cudaFree(d_out);
     cudaFree(blockCounter);
+    cudaFree(allBlocksFinished);
 }
