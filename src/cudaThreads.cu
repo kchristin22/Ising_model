@@ -2,7 +2,7 @@
 #include <cmath>
 #include "cudaThreads.cuh"
 
-__global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint32_t k, uint32_t *blockCounter)
+__global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint32_t k, uint32_t *blockCounter, uint8_t *allBlocksFinished)
 {
     size_t n2 = n * n;
     size_t index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -24,23 +24,31 @@ __global__ void isingModel(uint8_t *out, uint8_t *in, const size_t n, const uint
         // sync the running blocks before swapping the pointers
         if (threadIdx.x == 0) // each block has at least one thread
         {
-            blockCounter[blockIdx.x] = 0; // initialize this block's value to 0
             blockCounter[blockIdx.x] = 1; // this block has finished
             __threadfence();              // ensure that threads reading the value of blockCounter from now on cannot see the previous value
 
-            bool allBlocksFinished = false;
-            while (!allBlocksFinished)
+            *allBlocksFinished = 0;
+            __threadfence();
+            while (!(*allBlocksFinished))
             {
-                allBlocksFinished = true;
-                for (size_t i = 0; i < gridDim.x; i++) // check the value of each block in the grid
+                if (blockIdx.x == 0) // there's at least one block
                 {
-                    if (blockCounter[i] == 0)
+                    for (size_t i = 0; i < gridDim.x; i++)
                     {
-                        allBlocksFinished = false;
-                        break;
+                        if (blockCounter[i] == 0)
+                            break;
+
+                        if (i == gridDim.x - 1)
+                        {
+                            *allBlocksFinished = 1;
+                            __threadfence(); // update the value of allBlocksFinished
+                        }
                     }
                 }
+                __threadfence(); // rest of the blocks load the new value of allBlocksFinished
             }
+            blockCounter[blockIdx.x] = 0; // re-set this block's value to 0
+            __threadfence();
         }
         __syncthreads(); // other threads of the block wait for thread 0
 
@@ -111,8 +119,13 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
         printf("Error: %d\n", error);
     }
 
+    // Allocate memory for the flag that indicates if all blocks have finished
+    uint8_t *allBlocksFinished;
+    cudaMalloc((void **)&allBlocksFinished, sizeof(uint8_t));
+    cudaMemset(allBlocksFinished, 0, sizeof(uint8_t));
+
     // Run the kernel
-    isingModel<<<blocks, threads>>>(d_out, d_in, (size_t)sqrt(n2), k, blockCounter);
+    isingModel<<<blocks, threads>>>(d_out, d_in, (size_t)sqrt(n2), k, blockCounter, allBlocksFinished);
     error = cudaGetLastError(); // Since no error was returned from all the previous cuda calls,
                                 // the last error must be from the kernel launch
     if (error != cudaSuccess)

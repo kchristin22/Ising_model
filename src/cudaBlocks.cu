@@ -36,9 +36,11 @@ __global__ void isingModelBlocks(uint8_t *out, uint8_t *in, const size_t n, cons
                 {
                     if (blockCounter[i] == 0)
                         break;
-
-                    *allBlocksFinished = 1;
-                    __threadfence(); // update the value of allBlocksFinished
+                    if (i == gridDim.x - 1)
+                    {
+                        *allBlocksFinished = 1;
+                        __threadfence(); // update the value of allBlocksFinished
+                    }
                 }
             }
             __threadfence(); // rest of the blocks load the new value of allBlocksFinished
