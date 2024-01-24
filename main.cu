@@ -109,9 +109,13 @@ int main(int argc, char **argv)
     // std::cout << std::endl;
 
     in = in2;
-    isingCuda(out2, in, k, blocks);
+    // isingCuda(out2, in, k, blocks);
 
     std::cout << "Seq and Cuda blocks are equal: " << (out == out2) << std::endl;
+    in = in2;
+
+    isingCudaGen(out2, in, k, blocks);
+    std::cout << "Seq and Cuda blocks gen are equal: " << (out == out2) << std::endl;
     in = in2;
 
     // std::cout << "out:" << std::endl;
@@ -129,7 +133,7 @@ int main(int argc, char **argv)
 
     struct timeval start, end;
     gettimeofday(&start, NULL);
-    isingCudaGen(out2, in, k, blocks, threadsPerBlock);
+    // isingCudaGen(out2, in, k, blocks, threadsPerBlock);
     gettimeofday(&end, NULL);
     std::cout << "Seq and Cuda threads shared gen are equal: " << (out == out2) << std::endl;
     in = in2;
@@ -144,7 +148,7 @@ int main(int argc, char **argv)
     // std::cout << std::endl;
 
     gettimeofday(&start, NULL);
-    isingCuda(out2, in, k, blocks, threadsPerBlock);
+    // isingCuda(out2, in, k, blocks, threadsPerBlock);
     gettimeofday(&end, NULL);
     std::cout << "Seq and Cuda threads shared are equal: " << (out == out2) << std::endl;
     in = in2;

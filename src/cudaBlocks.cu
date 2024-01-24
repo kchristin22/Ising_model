@@ -159,8 +159,6 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
 
     */
 
-    error = cudaGetLastError(); // Since no error was returned from all the previous cuda calls,
-                                // the last error must be from the kernel launch
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(error));
