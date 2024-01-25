@@ -138,7 +138,7 @@ void isingCudaGen(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uin
         }
 
         // Wait for the kernel to finish to avoid exiting the program prematurely
-        error = cudaDeviceSynchronize();
+        error = cudaStreamSynchronize(0);
         if (error != cudaSuccess)
         {
             fprintf(stderr, "Device synchronization failed: %s\n", cudaGetErrorString(error));

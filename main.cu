@@ -17,11 +17,14 @@ int main(int argc, char **argv)
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, device);
 
-    // int supportsCoopLaunch = 0;
-    // cudaDeviceGetAttribute(&supportsCoopLaunch, cudaDevAttrCooperativeLaunch, device);
-    // std::cout << "Cooperative launch support: " << supportsCoopLaunch << std::endl;
+    // Needed to use cudaStreamSynchronize instead of cudaDeviceSynchronize which is slower
+    std::cout << "cudaDeviceScheduleBlockingSync flag: " << prop.kernelExecTimeoutEnabled << std::endl;
 
-    // printf("Max grid size memory per block: %d bytes\n", prop.maxGridSize[0]);
+    int supportsCoopLaunch = 0;
+    cudaDeviceGetAttribute(&supportsCoopLaunch, cudaDevAttrCooperativeLaunch, device);
+    std::cout << "Cooperative launch support: " << supportsCoopLaunch << std::endl;
+
+    printf("Max grid size of dimesion x: %d bytes\n", prop.maxGridSize[0]); // change macro of MAX_BLOCKS if necessary
 
     uint8_t version; // enum
     size_t n;
@@ -108,8 +111,7 @@ int main(int argc, char **argv)
     // std::cout << std::endl;
 
     in = in2;
-    // isingCuda(out2, in, k, blocks);
-
+    isingCuda(out2, in, k, blocks);
     std::cout << "Seq and Cuda blocks are equal: " << (out == out2) << std::endl;
     in = in2;
 
@@ -138,12 +140,12 @@ int main(int argc, char **argv)
     // }
     // std::cout << std::endl;
 
-    // isingCuda(out2, in, k);
+    isingCuda(out2, in, k);
     std::cout << "Seq and Cuda threads are equal: " << (out == out2) << std::endl;
     in = in2;
 
     gettimeofday(&start, NULL);
-    // isingCudaGen(out2, in, k, blocks, threadsPerBlock);
+    isingCudaGen(out2, in, k, blocks, threadsPerBlock);
     gettimeofday(&end, NULL);
     std::cout << "Seq and Cuda threads shared gen are equal: " << (out == out2) << std::endl;
     in = in2;
@@ -158,7 +160,7 @@ int main(int argc, char **argv)
     // std::cout << std::endl;
 
     gettimeofday(&start, NULL);
-    // isingCuda(out2, in, k, blocks, threadsPerBlock);
+    isingCuda(out2, in, k, blocks, threadsPerBlock);
     gettimeofday(&end, NULL);
     std::cout << "Seq and Cuda threads shared are equal: " << (out == out2) << std::endl;
     in = in2;

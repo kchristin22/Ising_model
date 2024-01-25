@@ -462,7 +462,7 @@ void isingCudaGenGraph(std::vector<uint8_t> &out, std::vector<uint8_t> &in, cons
     }
 
     // Synchronize
-    error = cudaDeviceSynchronize();
+    error = cudaStreamSynchronize(0);
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Device synchronization failed: %s\n", cudaGetErrorString(error));
