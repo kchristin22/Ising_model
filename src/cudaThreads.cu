@@ -73,14 +73,14 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
 
     // Allocate memory on the device (GPU)
     uint8_t *d_in, *d_out;
-    cudaError_t error = cudaMalloc((void **)&d_in, n2 * sizeof(uint8_t));
+    cudaError_t error = cudaMallocAsync((void **)&d_in, n2 * sizeof(uint8_t), 0);
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Malloc of d_in failed: %s\n", cudaGetErrorString(error));
         printf("Error: %d\n", error);
         return;
     }
-    error = cudaMalloc((void **)&d_out, n2 * sizeof(uint8_t));
+    error = cudaMallocAsync((void **)&d_out, n2 * sizeof(uint8_t), 0);
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Malloc of d_out failed: %s\n", cudaGetErrorString(error));
@@ -89,7 +89,7 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
     }
 
     // Copy the input from CPU to the device
-    error = cudaMemcpy(d_in, in.data(), n2 * sizeof(uint8_t), cudaMemcpyHostToDevice);
+    error = cudaMemcpyAsync(d_in, in.data(), n2 * sizeof(uint8_t), cudaMemcpyHostToDevice);
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Memcpy of d_in failed: %s\n", cudaGetErrorString(error));
@@ -107,13 +107,13 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
     uint32_t threads = (uint32_t)ceil((double)n2 / blocks); // distribute the elements evenly among the blocks
 
     uint32_t *blockCounter; // used to sync the blocks
-    error = cudaMalloc((void **)&blockCounter, sizeof(uint32_t));
+    error = cudaMallocAsync((void **)&blockCounter, sizeof(uint32_t), 0);
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Malloc of blockCounter failed: %s\n", cudaGetErrorString(error));
         printf("Error: %d\n", error);
     }
-    error = cudaMemset(blockCounter, 0, sizeof(uint32_t)); // initialize block counter to 0
+    error = cudaMemsetAsync(blockCounter, 0, sizeof(uint32_t)); // initialize block counter to 0
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Memset of blockCounter failed: %s\n", cudaGetErrorString(error));
@@ -122,13 +122,13 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
 
     // Allocate memory for the flag that indicates if all blocks have finished
     bool *allBlocksFinished;
-    error = cudaMalloc((void **)&allBlocksFinished, sizeof(bool));
+    error = cudaMallocAsync((void **)&allBlocksFinished, sizeof(bool), 0);
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Malloc of allBlocksFinished failed: %s\n", cudaGetErrorString(error));
         printf("Error: %d\n", error);
     }
-    error = cudaMemset(allBlocksFinished, false, sizeof(bool));
+    error = cudaMemsetAsync(allBlocksFinished, false, sizeof(bool));
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Memset of allBlocksFinished failed: %s\n", cudaGetErrorString(error));
@@ -167,9 +167,9 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
 
     // Copy the output back to the host
     if (k % 2 == 0)
-        error = cudaMemcpy(out.data(), d_in, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+        error = cudaMemcpyAsync(out.data(), d_in, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost);
     else
-        error = cudaMemcpy(out.data(), d_out, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+        error = cudaMemcpyAsync(out.data(), d_out, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost);
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Memcpy of device's output to host failed: %s\n", cudaGetErrorString(error));
@@ -178,8 +178,8 @@ void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32
     }
 
     // Free the memory on the device
-    cudaFree(d_in);
-    cudaFree(d_out);
-    cudaFree(blockCounter);
-    cudaFree(allBlocksFinished);
+    cudaFreeAsync(d_in, 0);
+    cudaFreeAsync(d_out, 0);
+    cudaFreeAsync(blockCounter, 0);
+    cudaFreeAsync(allBlocksFinished, 0);
 }

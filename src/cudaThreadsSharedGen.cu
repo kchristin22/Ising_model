@@ -55,14 +55,14 @@ void isingCudaGen(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uin
 
     // Allocate memory on the device (GPU)
     uint8_t *d_in, *d_out;
-    cudaError_t error = cudaMalloc((void **)&d_in, n2 * sizeof(uint8_t));
+    cudaError_t error = cudaMallocAsync((void **)&d_in, n2 * sizeof(uint8_t), 0);
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Malloc of d_in failed: %s\n", cudaGetErrorString(error));
         printf("Error: %d\n", error);
         return;
     }
-    error = cudaMalloc((void **)&d_out, n2 * sizeof(uint8_t));
+    error = cudaMallocAsync((void **)&d_out, n2 * sizeof(uint8_t), 0);
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Malloc of d_out failed: %s\n", cudaGetErrorString(error));
@@ -71,13 +71,13 @@ void isingCudaGen(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uin
     }
 
     uint32_t *blockCounter; // used to sync the blocks
-    error = cudaMalloc((void **)&blockCounter, sizeof(uint32_t));
+    error = cudaMallocAsync((void **)&blockCounter, sizeof(uint32_t), 0);
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Malloc of blockCounter failed: %s\n", cudaGetErrorString(error));
         printf("Error: %d\n", error);
     }
-    error = cudaMemset(blockCounter, 0, sizeof(uint32_t)); // initialize block counter to 0
+    error = cudaMemsetAsync(blockCounter, 0, sizeof(uint32_t)); // initialize block counter to 0
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Memset of blockCounter failed: %s\n", cudaGetErrorString(error));
@@ -85,7 +85,7 @@ void isingCudaGen(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uin
     }
 
     // Copy the input from CPU to the device
-    error = cudaMemcpy(d_in, in.data(), n2 * sizeof(uint8_t), cudaMemcpyHostToDevice);
+    error = cudaMemcpyAsync(d_in, in.data(), n2 * sizeof(uint8_t), cudaMemcpyHostToDevice);
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Memcpy of d_in failed: %s\n", cudaGetErrorString(error));
@@ -155,7 +155,7 @@ void isingCudaGen(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uin
     }
 
     // Copy the output back to the host
-    error = cudaMemcpy(out.data(), d_in, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost); // the last swap is not needed, so d_in is the final result
+    error = cudaMemcpyAsync(out.data(), d_in, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost); // the last swap is not needed, so d_in is the final result
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Memcpy of device's output to host failed: %s\n", cudaGetErrorString(error));
@@ -163,7 +163,7 @@ void isingCudaGen(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uin
         return;
     }
     // Free the memory on the device
-    cudaFree(d_in);
-    cudaFree(d_out);
-    cudaFree(blockCounter);
+    cudaFreeAsync(d_in, 0);
+    cudaFreeAsync(d_out, 0);
+    cudaFreeAsync(blockCounter, 0);
 }
