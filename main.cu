@@ -17,9 +17,8 @@ int main(int argc, char **argv)
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, device);
 
-    // int dev = 0;
     // int supportsCoopLaunch = 0;
-    // cudaDeviceGetAttribute(&supportsCoopLaunch, cudaDevAttrCooperativeLaunch, dev);
+    // cudaDeviceGetAttribute(&supportsCoopLaunch, cudaDevAttrCooperativeLaunch, device);
     // std::cout << "Cooperative launch support: " << supportsCoopLaunch << std::endl;
 
     // printf("Max grid size memory per block: %d bytes\n", prop.maxGridSize[0]);
@@ -114,8 +113,20 @@ int main(int argc, char **argv)
     std::cout << "Seq and Cuda blocks are equal: " << (out == out2) << std::endl;
     in = in2;
 
+    struct timeval start, end;
+
+    gettimeofday(&start, NULL);
+    isingCudaGenGraph(out2, in, k, blocks);
+    gettimeofday(&end, NULL);
+    std::cout << "Seq and Cuda blocks gen graph are equal: " << (out == out2) << std::endl;
+    std::cout << "Time gen graph: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
+    in = in2;
+
+    gettimeofday(&start, NULL);
     isingCudaGen(out2, in, k, blocks);
+    gettimeofday(&end, NULL);
     std::cout << "Seq and Cuda blocks gen are equal: " << (out == out2) << std::endl;
+    std::cout << "Time gen: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
     in = in2;
 
     // std::cout << "out:" << std::endl;
@@ -131,7 +142,6 @@ int main(int argc, char **argv)
     std::cout << "Seq and Cuda threads are equal: " << (out == out2) << std::endl;
     in = in2;
 
-    struct timeval start, end;
     gettimeofday(&start, NULL);
     // isingCudaGen(out2, in, k, blocks, threadsPerBlock);
     gettimeofday(&end, NULL);

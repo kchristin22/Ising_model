@@ -86,8 +86,8 @@ __global__ void assignClearValue(uint8_t *out, uint8_t *in, const size_t n, cons
 
     for (size_t i = start; i < end; i++)
     {
-        out[i] = out[i] > 2;
-        in[i] = 0;
+        in[i] = out[i] > 2; // swap the pointers and assign the final value of this iteration
+        out[i] = 0;         // clear the output for the next iteration
     }
 }
 
@@ -149,6 +149,44 @@ void isingCudaGen(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uin
         blockChunk = (uint32_t)ceil((double)n2 / blocks);
     }
 
+    funcP upFunc, downFunc, leftFunc, rightFunc, centerFunc;
+
+    error = cudaMemcpyFromSymbol(&upFunc, upP, sizeof(funcP));
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Memcpy of upFunc failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+    error = cudaMemcpyFromSymbol(&downFunc, downP, sizeof(funcP));
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Memcpy of downFunc failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+    error = cudaMemcpyFromSymbol(&leftFunc, leftP, sizeof(funcP));
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Memcpy of leftFunc failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+    error = cudaMemcpyFromSymbol(&rightFunc, rightP, sizeof(funcP));
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Memcpy of rightFunc failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+    error = cudaMemcpyFromSymbol(&centerFunc, centerP, sizeof(funcP));
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Memcpy of centerFunc failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+
     // Set arguments for the kernel
     size_t n = (size_t)sqrt(n2);
 
@@ -158,6 +196,120 @@ void isingCudaGen(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uin
     cudaStreamCreate(&left);
     cudaStreamCreate(&right);
     cudaStreamCreate(&center);
+
+    for (size_t iter = 0; iter < k; iter++)
+    {
+        // Launch the kernel
+        addValue<<<blocks, 1, 0, up>>>(d_out, d_in, n, blockChunk, upFunc);
+        addValue<<<blocks, 1, 0, down>>>(d_out, d_in, n, blockChunk, downFunc);
+        addValue<<<blocks, 1, 0, left>>>(d_out, d_in, n, blockChunk, leftFunc);
+        addValue<<<blocks, 1, 0, right>>>(d_out, d_in, n, blockChunk, rightFunc);
+        addValue<<<blocks, 1, 0, center>>>(d_out, d_in, n, blockChunk, centerFunc);
+        error = cudaGetLastError(); // Since no error was returned from all the previous cuda calls,
+                                    // the last error must be from the kernel launches
+
+        if (error != cudaSuccess)
+        {
+            fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(error));
+            printf("Error: %d\n", error);
+        }
+
+        assignClearValue<<<blocks, 1>>>(d_out, d_in, n, blockChunk); // no sync needed because default stream is synchronous to the others
+        error = cudaGetLastError();                                  // Since no error was returned from all the previous cuda calls,
+        // the last error must be from the kernel launches
+        if (error != cudaSuccess)
+        {
+            fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(error));
+            printf("Error: %d\n", error);
+        }
+    }
+
+    cudaStreamDestroy(up);
+    cudaStreamDestroy(down);
+    cudaStreamDestroy(left);
+    cudaStreamDestroy(right);
+    cudaStreamDestroy(center);
+
+    // Wait for the default stream to finish to launch next iteration
+    error = cudaStreamSynchronize(0);
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Device synchronization failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+
+    // Copy the output back to the host
+    error = cudaMemcpy(out.data(), d_in, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost); // last iteration's output is in d_in
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Memcpy of device's output to host failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+
+    // Free the memory on the device
+    cudaFree(d_in);
+    cudaFree(d_out);
+}
+
+void isingCudaGenGraph(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32_t k, uint32_t blocks)
+{
+    size_t n2 = in.size();
+    // check if `in` vector has a perfect square size
+    if (ceil(sqrt(n2)) != floor(sqrt(n2)))
+    {
+        std::cout << "Error: input vector has wrong dimensions" << std::endl;
+        return;
+    }
+    out.resize(n2);
+
+    // Allocate memory on the device (GPU)
+    uint8_t *d_in, *d_out;
+    cudaError_t error = cudaMalloc((void **)&d_in, n2 * sizeof(uint8_t));
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Malloc of d_in failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+    error = cudaMalloc((void **)&d_out, n2 * sizeof(uint8_t));
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Malloc of d_out failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+
+    // Copy the input from CPU to the device
+    error = cudaMemcpy(d_in, in.data(), n2 * sizeof(uint8_t), cudaMemcpyHostToDevice);
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Memcpy of d_in failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+
+    uint32_t blockChunk;
+    if (blocks > n2)
+    {
+        std::cout << "No need for that many blocks. Using " << n2 << " blocks" << std::endl;
+        blocks = n2;
+        blockChunk = 1;
+    }
+    else
+    {
+        blockChunk = n2 / blocks;                         // number of elements each block will process
+        blocks = (uint32_t)ceil((double)n2 / blockChunk); // the actual number of blocks may change but the total number of elements
+                                                          // processed per block will be as expected
+    }
+
+    if (blocks > MAX_BLOCKS)
+    {
+        std::cout << "Error: too many blocks. Using " << MAX_BLOCKS << " blocks" << std::endl;
+        blocks = MAX_BLOCKS;
+        blockChunk = (uint32_t)ceil((double)n2 / blocks);
+    }
 
     funcP upFunc, downFunc, leftFunc, rightFunc, centerFunc;
 
@@ -197,61 +349,133 @@ void isingCudaGen(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uin
         return;
     }
 
-    for (size_t iter = 0; iter < k; iter++)
+    // Set arguments for the kernel
+    size_t n = (size_t)sqrt(n2);
+
+    // Create the graph
+    cudaGraph_t graph;
+    cudaGraphExec_t instance;
+    cudaGraphNode_t addValueNodes[5], assignClearValueNode;
+    cudaKernelNodeParams kernelNodeParams[5] = {0};
+    cudaKernelNodeParams assignClearValueNodeParams = {0};
+
+    // Create an empty graph
+    error = cudaGraphCreate(&graph, 0);
+    if (error != cudaSuccess)
     {
-        // Launch the kernel
-        addValue<<<blocks, 1, 0, up>>>(d_out, d_in, n, blockChunk, upFunc);
-        addValue<<<blocks, 1, 0, down>>>(d_out, d_in, n, blockChunk, downFunc);
-        addValue<<<blocks, 1, 0, left>>>(d_out, d_in, n, blockChunk, leftFunc);
-        addValue<<<blocks, 1, 0, right>>>(d_out, d_in, n, blockChunk, rightFunc);
-        addValue<<<blocks, 1, 0, center>>>(d_out, d_in, n, blockChunk, centerFunc);
-        error = cudaGetLastError(); // Since no error was returned from all the previous cuda calls,
-                                    // the last error must be from the kernel launches
+        fprintf(stderr, "Graph creation failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
 
-        if (error != cudaSuccess)
+    // Parameters for the addValue kernels
+    void *addValueArgs[5] = {(void *)&d_out, (void *)&d_in, (void *)&n, (void *)&blockChunk, (void *)&upFunc}; // Repeat for other functions
+
+    // Create nodes for the addValue kernel launches
+    for (int i = 0; i < 5; ++i)
+    {
+        kernelNodeParams[i].func = (void *)addValue; // Assuming addValue is a global function
+        kernelNodeParams[i].gridDim = blocks;
+        kernelNodeParams[i].blockDim = 1;
+        kernelNodeParams[i].sharedMemBytes = 0;
+        kernelNodeParams[i].extra = NULL;
+
+        switch (i)
         {
-            fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(error));
-            printf("Error: %d\n", error);
+        case 0:
+            addValueArgs[4] = (void *)&upFunc;
+            break;
+        case 1:
+            addValueArgs[4] = (void *)&downFunc;
+            break;
+        case 2:
+            addValueArgs[4] = (void *)&leftFunc;
+            break;
+        case 3:
+            addValueArgs[4] = (void *)&rightFunc;
+            break;
+        case 4:
+            addValueArgs[4] = (void *)&centerFunc;
+            break;
         }
+        kernelNodeParams[i].kernelParams = addValueArgs;
 
-        assignClearValue<<<blocks, 1>>>(d_out, d_in, n, blockChunk); // no sync needed because default stream is synchronous to the others
-        error = cudaGetLastError();                                  // Since no error was returned from all the previous cuda calls,
-        // the last error must be from the kernel launches
+        error = cudaGraphAddKernelNode(&addValueNodes[i], graph, NULL, 0, &kernelNodeParams[i]);
         if (error != cudaSuccess)
         {
-            fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(error));
-            printf("Error: %d\n", error);
-        }
-
-        if (error != cudaSuccess)
-        {
-            fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(error));
-            printf("Error: %d\n", error);
-        }
-
-        // Wait for the default stream to finish to launch next iteration
-        error = cudaStreamSynchronize(0);
-        if (error != cudaSuccess)
-        {
-            fprintf(stderr, "Device synchronization failed: %s\n", cudaGetErrorString(error));
+            fprintf(stderr, "addValue kernel %d node addition failed: %s\n", i, cudaGetErrorString(error));
             printf("Error: %d\n", error);
             return;
         }
-
-        // swap the pointers
-        uint8_t *temp = d_in;
-        d_in = d_out;
-        d_out = temp;
     }
 
-    cudaStreamDestroy(up);
-    cudaStreamDestroy(down);
-    cudaStreamDestroy(left);
-    cudaStreamDestroy(right);
-    cudaStreamDestroy(center);
+    // Parameters for the assignClearValue kernel
+    void *assignClearValueArgs[4] = {(void *)&d_out, (void *)&d_in, (void *)&n, (void *)&blockChunk};
+
+    assignClearValueNodeParams.func = (void *)assignClearValue;
+    assignClearValueNodeParams.gridDim = blocks;
+    assignClearValueNodeParams.blockDim = 1;
+    assignClearValueNodeParams.sharedMemBytes = 0;
+    assignClearValueNodeParams.kernelParams = assignClearValueArgs;
+    assignClearValueNodeParams.extra = NULL;
+
+    // Create node for the assignClearValue kernel launch
+    error = cudaGraphAddKernelNode(&assignClearValueNode, graph, NULL, 0, &assignClearValueNodeParams);
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "assign kernel node addition failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+
+    // Set dependencies (assuming assignClearValue depends on all addValue kernels)
+    for (int i = 0; i < 5; ++i)
+    {
+        error = cudaGraphAddDependencies(graph, &addValueNodes[i], &assignClearValueNode, 1);
+        if (error != cudaSuccess)
+        {
+            fprintf(stderr, "add depedency failed: %s\n", cudaGetErrorString(error));
+            printf("Error: %d\n", error);
+            return;
+        }
+    }
+
+    // Instantiate and launch the graph
+    error = cudaGraphInstantiate(&instance, graph, NULL, NULL, 0);
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Graph instantiation failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+
+    for (size_t iter = 0; iter < k; iter++)
+    {
+
+        error = cudaGraphLaunch(instance, 0); // Assuming stream 0 for simplicity
+        if (error != cudaSuccess)
+        {
+            fprintf(stderr, "Graph launch iteration %ld failed: %s\n", iter, cudaGetErrorString(error));
+            printf("Error: %d\n", error);
+            return;
+        }
+    }
+
+    // Synchronize
+    error = cudaDeviceSynchronize();
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Device synchronization failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+
+    // Clean up
+    cudaGraphExecDestroy(instance);
+    cudaGraphDestroy(graph);
 
     // Copy the output back to the host
-    error = cudaMemcpy(out.data(), d_in, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+    error = cudaMemcpy(out.data(), d_in, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost); // last iteration's output is in d_in
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Memcpy of device's output to host failed: %s\n", cudaGetErrorString(error));

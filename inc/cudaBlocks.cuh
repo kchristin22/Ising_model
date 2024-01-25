@@ -45,10 +45,18 @@ __global__ void assignClearValue(uint8_t *out, uint8_t *in, const size_t n, cons
  */
 void isingCuda(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32_t k, uint32_t blocks);
 
-/* Wrapper function for the kernel
+/* Wrapper function for the kernel. This version contains streams to add on the parallelism.
  * @params:  out(output): state of the array after k iterations
  *           in(input): input array
  *           k(input): number of iterations
  *           blocks(input): number of blocks to be executed
  */
 void isingCudaGen(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32_t k, uint32_t blocks);
+
+/* Wrapper function for the kernel. This version contains a graph with node depedencies to improve scheduling.
+ * @params:  out(output): state of the array after k iterations
+ *           in(input): input array
+ *           k(input): number of iterations
+ *           blocks(input): number of blocks to be executed
+ */
+void isingCudaGenGraph(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32_t k, uint32_t blocks);
