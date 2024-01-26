@@ -57,6 +57,15 @@
     "istream": "cpp",
     "sstream": "cpp",
     "bitset": "cpp",
-    "__nullptr": "cpp"
+    "__nullptr": "cpp",
+    "list": "cpp",
+    "unordered_set": "cpp",
+    "__bit_reference": "cpp",
+    "__hash_table": "cpp",
+    "__split_buffer": "cpp",
+    "__tree": "cpp",
+    "filesystem": "cpp",
+    "map": "cpp",
+    "set": "cpp"
   }
 }

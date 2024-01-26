@@ -90,14 +90,10 @@ void isingCudaGen(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uin
             printf("Error: %d\n", error);
         }
 
-        assignClearValue<<<blocks, threads>>>(d_out, d_in, n); // no sync needed because default stream is synchronous to the others
-        error = cudaGetLastError();                            // Since no error was returned from all the previous cuda calls,
-        // the last error must be from the kernel launches
-        if (error != cudaSuccess)
-        {
-            fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(error));
-            printf("Error: %d\n", error);
-        }
+        // Swap the pointers to prepare for the next iteration
+        uint8_t *temp = d_in;
+        d_in = d_out;
+        d_out = temp;
     }
 
     // Wait for the kernel to finish to avoid exiting the program prematurely
@@ -180,23 +176,24 @@ void isingCudaGenGraph(std::vector<uint8_t> &out, std::vector<uint8_t> &in, cons
     cudaGraphCreate(&graph, 0);
     cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal);
 
-    addValue<<<blocks, threads, 0, stream>>>(d_out, d_in, n);
+    for (size_t iter = 0; iter < k; iter++)
+    {
+        addValue<<<blocks, threads, 0, stream>>>(d_out, d_in, n);
 
-    assignClearValue<<<blocks, threads, 0, stream>>>(d_out, d_in, n);
+        // use the kernel equivalent of pointer swapping to take advantage of graph instantiation
+        assignClearValue<<<blocks, threads, 0, stream>>>(d_out, d_in, n);
+    }
 
     cudaStreamEndCapture(stream, &graph);
 
     cudaGraphInstantiate(&instance, graph, NULL, NULL, 0);
 
-    for (size_t iter = 0; iter < k; iter++)
+    error = cudaGraphLaunch(instance, stream);
+    if (error != cudaSuccess)
     {
-        error = cudaGraphLaunch(instance, stream);
-        if (error != cudaSuccess)
-        {
-            fprintf(stderr, "Graph launch iteration %ld failed: %s\n", iter, cudaGetErrorString(error));
-            printf("Error: %d\n", error);
-            return;
-        }
+        fprintf(stderr, "Graph launch failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
     }
 
     // Wait for the kernel to finish to avoid exiting the program prematurely

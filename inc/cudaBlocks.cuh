@@ -45,7 +45,7 @@ __global__ void addValue(uint8_t *out, const uint8_t *in, const size_t n, const 
  */
 __global__ void assignClearValue(uint8_t *out, uint8_t *in, const size_t n, const uint32_t blockChunk);
 
-/* Wrapper function for the kernel. This version can handle any size of array.
+/* Wrapper function for the kernel. This version can handle any number of blocks.
  * @params:  out(output): state of the array after k iterations
  *           in(input): input array
  *           k(input): number of iterations
@@ -53,7 +53,7 @@ __global__ void assignClearValue(uint8_t *out, uint8_t *in, const size_t n, cons
  */
 void isingCudaGen(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32_t k, uint32_t blocks);
 
-/* Wrapper function for the kernel. This version contains a graph with node depedencies to improve scheduling and can handle any size of array.
+/* Wrapper function for the kernel. This version contains a graph with node depedencies to improve scheduling and can handle any number of blocks.
  * @params:  out(output): state of the array after k iterations
  *           in(input): input array
  *           k(input): number of iterations
@@ -78,7 +78,7 @@ __global__ void addValueStreams(uint8_t *out, const uint8_t *in, const size_t n,
  */
 __global__ void assignClearValueStreams(uint8_t *out, uint8_t *in, const size_t n, const uint32_t blockChunk);
 
-/* Wrapper function for the kernel. This version contains streams to add on the parallelism and can handle any size of array.
+/* Wrapper function for the kernel. This version contains streams to add on the parallelism and can handle any any number of blocks.
  * @params:  out(output): state of the array after k iterations
  *           in(input): input array
  *           k(input): number of iterations

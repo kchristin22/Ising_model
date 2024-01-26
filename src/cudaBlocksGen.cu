@@ -191,21 +191,16 @@ void isingCudaGen(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uin
         addValue<<<blocks, 1>>>(d_out, d_in, n, blockChunk);
         error = cudaGetLastError(); // Since no error was returned from all the previous cuda calls,
                                     // the last error must be from the kernel launches
-
         if (error != cudaSuccess)
         {
             fprintf(stderr, "Add Kernel launch failed: %s\n", cudaGetErrorString(error));
             printf("Error: %d\n", error);
         }
 
-        assignClearValue<<<blocks, 1>>>(d_out, d_in, n, blockChunk); // no sync needed because default stream is synchronous to the others
-        error = cudaGetLastError();                                  // Since no error was returned from all the previous cuda calls,
-                                                                     // the last error must be from the kernel launches
-        if (error != cudaSuccess)
-        {
-            fprintf(stderr, "Assign Kernel launch failed: %s\n", cudaGetErrorString(error));
-            printf("Error: %d\n", error);
-        }
+        // Swap the pointers to prepare for the next iteration
+        uint8_t *temp = d_in;
+        d_in = d_out;
+        d_out = temp;
     }
 
     // Wait for the kernel to finish to avoid exiting the program prematurely
@@ -300,23 +295,24 @@ void isingCudaGenGraph(std::vector<uint8_t> &out, std::vector<uint8_t> &in, cons
     cudaGraphCreate(&graph, 0);
     cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal);
 
-    addValue<<<blocks, 1, 0, stream>>>(d_out, d_in, n, blockChunk);
+    for (size_t iter = 0; iter < k; iter++)
+    {
+        addValue<<<blocks, 1, 0, stream>>>(d_out, d_in, n, blockChunk);
 
-    assignClearValue<<<blocks, 1, 0, stream>>>(d_out, d_in, n, blockChunk);
+        // use the kernel equivalent of pointer swapping to take advantage of graph instantiation
+        assignClearValue<<<blocks, 1, 0, stream>>>(d_out, d_in, n, blockChunk);
+    }
 
     cudaStreamEndCapture(stream, &graph);
 
     cudaGraphInstantiate(&instance, graph, NULL, NULL, 0);
 
-    for (size_t iter = 0; iter < k; iter++)
+    error = cudaGraphLaunch(instance, stream);
+    if (error != cudaSuccess)
     {
-        error = cudaGraphLaunch(instance, stream);
-        if (error != cudaSuccess)
-        {
-            fprintf(stderr, "Graph launch iteration %ld failed: %s\n", iter, cudaGetErrorString(error));
-            printf("Error: %d\n", error);
-            return;
-        }
+        fprintf(stderr, "Graph launch failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
     }
 
     // Wait for the kernel to finish to avoid exiting the program prematurely
@@ -471,7 +467,7 @@ void isingCudaGenStreams(std::vector<uint8_t> &out, std::vector<uint8_t> &in, co
 
         assignClearValueStreams<<<blocks, 1>>>(d_out, d_in, n, blockChunk); // no sync needed because default stream is synchronous to the others
         error = cudaGetLastError();                                         // Since no error was returned from all the previous cuda calls,
-                                                                            // the last error must be from the kernel launches
+                                                                            // the last error must be from the kernel launches if (error != cudaSuccess)
         if (error != cudaSuccess)
         {
             fprintf(stderr, "Assign Kernel launch failed: %s\n", cudaGetErrorString(error));

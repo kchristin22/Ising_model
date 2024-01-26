@@ -7,7 +7,6 @@
 #include "cudaThreads.cuh"
 #include "cudaBlocks.cuh"
 #include "cudaThreadsShared.cuh"
-#include "cudaThreadsSharedGen.cuh"
 
 int main(int argc, char **argv)
 {
@@ -111,9 +110,8 @@ int main(int argc, char **argv)
     // std::cout << std::endl;
 
     in = in2;
-    isingCuda(out2, in, k, blocks);
-    std::cout << "Seq and Cuda blocks are equal: " << (out == out2) << std::endl;
-    in = in2;
+
+    cudaDeviceSynchronize();
 
     struct timeval start, end;
 
@@ -124,6 +122,8 @@ int main(int argc, char **argv)
     std::cout << "Time gen graph: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
     in = in2;
 
+    cudaDeviceSynchronize();
+
     gettimeofday(&start, NULL);
     isingCudaGen(out2, in, k, blocks);
     gettimeofday(&end, NULL);
@@ -131,18 +131,29 @@ int main(int argc, char **argv)
     std::cout << "Time gen: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
     in = in2;
 
-    // std::cout << "out:" << std::endl;
-    // for (size_t i = 0; i < out.size(); i++)
-    // {
-    //     if (i != 0 && i % ((size_t)sqrt(out.size())) == 0)
-    //         std::cout << std::endl;
-    //     std::cout << unsigned(out2[i]) << " ";
-    // }
-    // std::cout << std::endl;
+    cudaDeviceSynchronize();
 
-    isingCuda(out2, in, k);
-    std::cout << "Seq and Cuda threads are equal: " << (out == out2) << std::endl;
+    gettimeofday(&start, NULL);
+    isingCudaGenStreams(out2, in, k, blocks);
+    gettimeofday(&end, NULL);
+    std::cout << "Seq and Cuda blocks gen streams are equal: " << (out == out2) << std::endl;
+    std::cout << "Time gen streams: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
     in = in2;
+
+    cudaDeviceSynchronize();
+
+    isingCudaGen(out2, in, k);
+    std::cout << "Seq and Cuda threads gen are equal: " << (out == out2) << std::endl;
+    in = in2;
+
+    cudaDeviceSynchronize();
+
+    isingCudaGenGraph(out2, in, k);
+    std::cout << "Seq and Cuda threads gen graph are equal: " << (out == out2) << std::endl;
+    in = in2;
+
+    cudaDeviceSynchronize();
+
 
     gettimeofday(&start, NULL);
     isingCudaGen(out2, in, k, blocks, threadsPerBlock);
@@ -150,60 +161,16 @@ int main(int argc, char **argv)
     std::cout << "Seq and Cuda threads shared gen are equal: " << (out == out2) << std::endl;
     in = in2;
     std::cout << "Time gen: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
-    // std::cout << "out:" << std::endl;
-    // for (size_t i = 0; i < out2.size(); i++)
-    // {
-    //     if (i != 0 && i % ((size_t)sqrt(out2.size())) == 0)
-    //         std::cout << std::endl;
-    //     std::cout << unsigned(out2[i]) << " ";
-    // }
-    // std::cout << std::endl;
+
+    cudaDeviceSynchronize();
 
     gettimeofday(&start, NULL);
-    isingCuda(out2, in, k, blocks, threadsPerBlock);
+    isingCudaGenGraph(out2, in, k, blocks, threadsPerBlock);
     gettimeofday(&end, NULL);
-    std::cout << "Seq and Cuda threads shared are equal: " << (out == out2) << std::endl;
+    std::cout << "Seq and Cuda threads shared gen graph are equal: " << (out == out2) << std::endl;
     in = in2;
     std::cout << "Time: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
 
-    // std::cout << "out:" << std::endl;
-    // for (size_t i = 0; i < out2.size(); i++)
-    // {
-    //     if (i != 0 && i % ((size_t)sqrt(out2.size())) == 0)
-    //         std::cout << std::endl;
-    //     std::cout << unsigned(out2[i]) << " ";
-    // }
-    // std::cout << std::endl;
-
-    // struct timeval start, end;
-    // gettimeofday(&start, NULL);
-    // isingCudaGen(out, in, k, blocks, threadsPerBlock);
-    // gettimeofday(&end, NULL);
-    // double time = (end.tv_sec - start.tv_sec) * 1000 + (end.tv_usec - start.tv_usec) / 1000; // ms
-    // std::cout << "Time gen: " << time << " ms" << std::endl;
-    // std::cout << "out:" << std::endl;
-    // for (size_t i = 0; i < out.size(); i++)
-    // {
-    //     if (i != 0 && i % ((size_t)sqrt(out.size())) == 0)
-    //         std::cout << std::endl;
-    //     std::cout << unsigned(out[i]) << " ";
-    // }
-    // std::cout << std::endl;
-
-    // gettimeofday(&start, NULL);
-    // isingCuda(out, in2, k, blocks, threadsPerBlock);
-    // gettimeofday(&end, NULL);
-    // time = (end.tv_sec - start.tv_sec) * 1000 + (end.tv_usec - start.tv_usec) / 1000; // ms
-    // std::cout << "Time: " << time << " ms" << std::endl;
-
-    // std::cout << "out:" << std::endl;
-    // for (size_t i = 0; i < out.size(); i++)
-    // {
-    //     if (i != 0 && i % ((size_t)sqrt(out.size())) == 0)
-    //         std::cout << std::endl;
-    //     std::cout << unsigned(out[i]) << " ";
-    // }
-    // std::cout << std::endl;
 
     return 0;
 }
