@@ -3,10 +3,29 @@
 #include <cstdio>
 #include <unistd.h>
 #include <sys/time.h>
+#include <map>
+#include <functional>
 #include "seq.hpp"
 #include "cudaThreads.cuh"
 #include "cudaBlocks.cuh"
 #include "cudaThreadsShared.cuh"
+
+std::map<uint8_t, std::string> VersionsMap =
+    {
+        {0, "SEQ"},
+        {1, "CUDA_THREADS"},
+        {2, "CUDA_BLOCKS"},
+        {3, "CUDA_THREADS_SHARED"},
+        {4, "CUDA_THREADS_GEN"},
+        {5, "CUDA_BLOCKS_GEN"},
+        {6, "CUDA_THREADS_SHARED_GEN"},
+        {7, "CUDA_BLOCKS_GEN_GRAPH"},
+        {8, "CUDA_THREADS_GEN_GRAPH"},
+        {9, "CUDA_THREADS_SHARED_GEN_GRAPH"},
+        {10, "CUDA_BLOCKS_GEN_STREAMS"},
+        {11, "CUDA_BLOCKS_GEN_GRAPH_STREAMS"},
+        {12, "ALL_GEN"},
+        {13, "ALL_GEN_GRAPH"}};
 
 int main(int argc, char **argv)
 {
@@ -25,7 +44,7 @@ int main(int argc, char **argv)
 
     printf("Max grid size of dimesion x: %d bytes\n", prop.maxGridSize[0]); // change macro of MAX_BLOCKS if necessary
 
-    uint8_t version; // enum
+    uint8_t version;
     size_t n;
     uint32_t k, blocks, threadsPerBlock;
     switch (argc)
@@ -83,7 +102,7 @@ int main(int argc, char **argv)
         break;
     }
 
-    // srand(time(NULL));
+    srand(time(NULL));
     std::vector<uint8_t> in(n * n);
     std::vector<uint8_t> out(n * n);
     for (size_t i = 0; i < in.size(); i++)
@@ -95,82 +114,145 @@ int main(int argc, char **argv)
     }
     // std::cout << std::endl;
 
-    std::vector<uint8_t> in2(n * n);
-    std::vector<uint8_t> out2(n * n);
-    in2 = in;
+    std::vector<uint8_t> in_copy(n * n);
+    in_copy = in;
+    std::vector<uint8_t> outSeq(n * n);
 
-    isingSeq(out, in, k);
-    // std::cout << "out:" << std::endl;
-    // for (size_t i = 0; i < out.size(); i++)
-    // {
-    //     if (i != 0 && i % ((size_t)sqrt(out.size())) == 0)
-    //         std::cout << std::endl;
-    //     std::cout << unsigned(out[i]) << " ";
-    // }
-    // std::cout << std::endl;
-
-    in = in2;
-
-    cudaDeviceSynchronize();
+    std::map<uint8_t, std::function<void()>> run = {
+        {0, [&]()
+         { isingSeq(out, in, k); }},
+        {1, [&]()
+         { isingCuda(out, in, k); }},
+        {2, [&]()
+         { isingCuda(out, in, k, blocks); }},
+        {3, [&]()
+         { isingCuda(out, in, k, blocks, threadsPerBlock); }},
+        {4, [&]()
+         { isingCudaGen(out, in, k); }},
+        {5, [&]()
+         { isingCudaGen(out, in, k, blocks); }},
+        {6, [&]()
+         { isingCudaGen(out, in, k, blocks, threadsPerBlock); }},
+        {7, [&]()
+         { isingCudaGenGraph(out, in, k, blocks); }},
+        {8, [&]()
+         { isingCudaGenGraph(out, in, k); }},
+        {9, [&]()
+         { isingCudaGenGraph(out, in, k, blocks, threadsPerBlock); }},
+        {10, [&]()
+         { isingCudaGenStreams(out, in, k, blocks); }},
+        {11, [&]()
+         { isingCudaGenGraphStreams(out, in, k, blocks); }}};
 
     struct timeval start, end;
 
-    gettimeofday(&start, NULL);
-    isingCudaGenGraph(out2, in, k, blocks);
-    gettimeofday(&end, NULL);
-    std::cout << "Seq and Cuda blocks gen graph are equal: " << (out == out2) << std::endl;
-    std::cout << "Time gen graph: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
-    in = in2;
+    std::cout << "Running version " << VersionsMap[version] << std::endl;
+
+    if (version < 12)
+    {
+        // run the version specified
+        gettimeofday(&start, NULL);
+        run[version]();
+        gettimeofday(&end, NULL);
+
+        if (VersionsMap[version] == "SEQ")
+        {
+            std::cout << "Time: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
+            return 0;
+        }
+
+        cudaDeviceSynchronize();
+
+        in = in_copy; // reset input
+
+        isingSeq(outSeq, in, k);
+        // std::cout << "out:" << std::endl;
+        // for (size_t i = 0; i < out.size(); i++)
+        // {
+        //     if (i != 0 && i % ((size_t)sqrt(out.size())) == 0)
+        //         std::cout << std::endl;
+        //     std::cout << unsigned(out[i]) << " ";
+        // }
+        // std::cout << std::endl;
+        std::cout << "Seq and Cuda are equal: " << (out == outSeq) << std::endl;
+        std::cout << "Time: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
+
+        return 0;
+    }
+
+    // run all versions
+
+    isingSeq(outSeq, in, k);
 
     cudaDeviceSynchronize();
+    in = in_copy;
 
-    gettimeofday(&start, NULL);
-    isingCudaGen(out2, in, k, blocks);
-    gettimeofday(&end, NULL);
-    std::cout << "Seq and Cuda blocks gen are equal: " << (out == out2) << std::endl;
-    std::cout << "Time gen: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
-    in = in2;
+    if (VersionsMap[version] == "ALL_GEN")
+    {
+        gettimeofday(&start, NULL);
+        isingCudaGen(out, in, k, blocks);
+        gettimeofday(&end, NULL);
+        std::cout << "Seq and Cuda blocks gen are equal: " << (out == outSeq) << std::endl;
+        std::cout << "Time blocks gen: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
+        cudaDeviceSynchronize();
+        in = in_copy;
 
-    cudaDeviceSynchronize();
+        gettimeofday(&start, NULL);
+        isingCudaGenStreams(out, in, k, blocks);
+        gettimeofday(&end, NULL);
+        std::cout << "Seq and Cuda blocks gen streams are equal: " << (out == outSeq) << std::endl;
+        std::cout << "Time blocks gen streams: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
+        cudaDeviceSynchronize();
+        in = in_copy;
 
-    gettimeofday(&start, NULL);
-    isingCudaGenStreams(out2, in, k, blocks);
-    gettimeofday(&end, NULL);
-    std::cout << "Seq and Cuda blocks gen streams are equal: " << (out == out2) << std::endl;
-    std::cout << "Time gen streams: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
-    in = in2;
+        gettimeofday(&start, NULL);
+        isingCudaGen(out, in, k);
+        gettimeofday(&end, NULL);
+        std::cout << "Seq and Cuda threads gen are equal: " << (out == outSeq) << std::endl;
+        std::cout << "Time threads gen: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
+        cudaDeviceSynchronize();
+        in = in_copy;
 
-    cudaDeviceSynchronize();
+        gettimeofday(&start, NULL);
+        isingCudaGen(out, in, k, blocks, threadsPerBlock);
+        gettimeofday(&end, NULL);
+        std::cout << "Seq and Cuda threads shared gen are equal: " << (out == outSeq) << std::endl;
+        std::cout << "Time threads shared gen: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
+        cudaDeviceSynchronize();
+    }
+    else
+    {
+        gettimeofday(&start, NULL);
+        isingCudaGenGraph(out, in, k, blocks);
+        gettimeofday(&end, NULL);
+        std::cout << "Seq and Cuda blocks gen graph are equal: " << (out == outSeq) << std::endl;
+        std::cout << "Time blocks gen graph: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
+        cudaDeviceSynchronize();
+        in = in_copy;
 
-    isingCudaGen(out2, in, k);
-    std::cout << "Seq and Cuda threads gen are equal: " << (out == out2) << std::endl;
-    in = in2;
+        gettimeofday(&start, NULL);
+        isingCudaGenGraphStreams(out, in, k, blocks);
+        gettimeofday(&end, NULL);
+        std::cout << "Seq and Cuda blocks gen graph streams are equal: " << (out == outSeq) << std::endl;
+        std::cout << "Time blocks gen graph streams: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
+        cudaDeviceSynchronize();
+        in = in_copy;
 
-    cudaDeviceSynchronize();
+        gettimeofday(&start, NULL);
+        isingCudaGenGraph(out, in, k);
+        gettimeofday(&end, NULL);
+        std::cout << "Seq and Cuda threads gen graph are equal: " << (out == outSeq) << std::endl;
+        std::cout << "Time threads gen graph: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
+        cudaDeviceSynchronize();
+        in = in_copy;
 
-    isingCudaGenGraph(out2, in, k);
-    std::cout << "Seq and Cuda threads gen graph are equal: " << (out == out2) << std::endl;
-    in = in2;
-
-    cudaDeviceSynchronize();
-
-
-    gettimeofday(&start, NULL);
-    isingCudaGen(out2, in, k, blocks, threadsPerBlock);
-    gettimeofday(&end, NULL);
-    std::cout << "Seq and Cuda threads shared gen are equal: " << (out == out2) << std::endl;
-    in = in2;
-    std::cout << "Time gen: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
-
-    cudaDeviceSynchronize();
-
-    gettimeofday(&start, NULL);
-    isingCudaGenGraph(out2, in, k, blocks, threadsPerBlock);
-    gettimeofday(&end, NULL);
-    std::cout << "Seq and Cuda threads shared gen graph are equal: " << (out == out2) << std::endl;
-    in = in2;
-    std::cout << "Time: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
-
+        gettimeofday(&start, NULL);
+        isingCudaGenGraph(out, in, k, blocks, threadsPerBlock);
+        gettimeofday(&end, NULL);
+        std::cout << "Seq and Cuda threads shared gen graph are equal: " << (out == outSeq) << std::endl;
+        std::cout << "Time threads shared gen graph: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
+        cudaDeviceSynchronize();
+    }
 
     return 0;
 }
