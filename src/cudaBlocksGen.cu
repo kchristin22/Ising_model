@@ -60,7 +60,7 @@ __device__ static inline char atomicAdd(char *address, char val)
     return __byte_perm(long_old, 0, long_address_modulo);
 }
 
-__global__ void addValue(uint8_t *out, const uint8_t *in, const size_t n, const uint32_t blockChunk, const funcP calcOffset)
+__global__ void addValue(uint8_t *out, const uint8_t *in, const size_t n, const uint32_t blockChunk)
 {
     size_t n2 = n * n;
     size_t start = blockIdx.x * blockChunk;
@@ -70,13 +70,46 @@ __global__ void addValue(uint8_t *out, const uint8_t *in, const size_t n, const 
 
     for (size_t i = start; i < end; i++)
     {
+        size_t up = (i - n + n2) % n2;
+        size_t down = (i + n) % n2;
+        size_t row = i / n;
+        size_t left = row * n + (i - 1 + n) % n;
+        size_t right = row * n + (i + 1) % n;
+        out[i] = (in[i] + in[up] + in[down] + in[left] + in[right]) > 2;
+    }
+}
+
+__global__ void addValueStreams(uint8_t *out, const uint8_t *in, const size_t n, const uint32_t blockChunk, const funcP calcOffset)
+{
+    size_t n2 = n * n;
+    size_t start = blockIdx.x * blockChunk;
+    size_t end = start + blockChunk;
+    if (end > n2)
+        end = n2;
+
+    for (size_t i = start; i < end; i++)
+    {
+        if (in[i] == 0)
+            continue;                        // skip if the value is 0 (no need to add it to the neighbors)
         size_t offset = (*calcOffset)(n, i); // alocate memory for calcOffset
-        atomicAdd((char *)&out[offset], (uint8_t)in[i]);
+        atomicAdd((char *)&out[offset], 1);
         __threadfence();
     }
 }
 
 __global__ void assignClearValue(uint8_t *out, uint8_t *in, const size_t n, const uint32_t blockChunk)
+{
+    size_t n2 = n * n;
+    size_t start = blockIdx.x * blockChunk;
+    size_t end = start + blockChunk;
+    if (end > n2)
+        end = n2;
+
+    for (size_t i = start; i < end; i++)
+        in[i] = out[i]; // swap the pointers and assign the final value of this iteration
+}
+
+__global__ void assignClearValueStreams(uint8_t *out, uint8_t *in, const size_t n, const uint32_t blockChunk)
 {
     size_t n2 = n * n;
     size_t start = blockIdx.x * blockChunk;
@@ -92,6 +125,228 @@ __global__ void assignClearValue(uint8_t *out, uint8_t *in, const size_t n, cons
 }
 
 void isingCudaGen(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32_t k, uint32_t blocks)
+{
+    size_t n2 = in.size();
+    // check if `in` vector has a perfect square size
+    if (ceil(sqrt(n2)) != floor(sqrt(n2)))
+    {
+        std::cout << "Error: input vector has wrong dimensions" << std::endl;
+        return;
+    }
+    out.resize(n2);
+
+    // Allocate memory on the device (GPU)
+    uint8_t *d_in, *d_out;
+    cudaError_t error = cudaMallocAsync((void **)&d_in, n2 * sizeof(uint8_t), 0); // not async as we also need to copy the input
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Malloc of d_in failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+    error = cudaMallocAsync((void **)&d_out, n2 * sizeof(uint8_t), 0);
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Malloc of d_out failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+
+    // Copy the input from CPU to the device
+    error = cudaMemcpyAsync(d_in, in.data(), n2 * sizeof(uint8_t), cudaMemcpyHostToDevice);
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Memcpy of d_in failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+
+    uint32_t blockChunk;
+    if (blocks > n2)
+    {
+        std::cout << "No need for that many blocks. Using " << n2 << " blocks" << std::endl;
+        blocks = n2;
+        blockChunk = 1;
+    }
+    else
+    {
+        blockChunk = n2 / blocks;                         // number of elements each block will process
+        blocks = (uint32_t)ceil((double)n2 / blockChunk); // the actual number of blocks may change but the total number of elements
+                                                          // processed per block will be as expected
+    }
+
+    if (blocks > MAX_BLOCKS)
+    {
+        std::cout << "Error: too many blocks. Using " << MAX_BLOCKS << " blocks" << std::endl;
+        blocks = MAX_BLOCKS;
+        blockChunk = (uint32_t)ceil((double)n2 / blocks);
+    }
+
+    // Set arguments for the kernel
+    size_t n = (size_t)sqrt(n2);
+
+    for (size_t iter = 0; iter < k; iter++)
+    {
+        // Launch the kernel
+        addValue<<<blocks, 1>>>(d_out, d_in, n, blockChunk);
+        error = cudaGetLastError(); // Since no error was returned from all the previous cuda calls,
+                                    // the last error must be from the kernel launches
+
+        if (error != cudaSuccess)
+        {
+            fprintf(stderr, "Add Kernel launch failed: %s\n", cudaGetErrorString(error));
+            printf("Error: %d\n", error);
+        }
+
+        assignClearValue<<<blocks, 1>>>(d_out, d_in, n, blockChunk); // no sync needed because default stream is synchronous to the others
+        error = cudaGetLastError();                                  // Since no error was returned from all the previous cuda calls,
+                                                                     // the last error must be from the kernel launches
+        if (error != cudaSuccess)
+        {
+            fprintf(stderr, "Assign Kernel launch failed: %s\n", cudaGetErrorString(error));
+            printf("Error: %d\n", error);
+        }
+    }
+
+    // Wait for the kernel to finish to avoid exiting the program prematurely
+    error = cudaStreamSynchronize(0);
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Device synchronization failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+
+    // Copy the output back to the host
+    error = cudaMemcpyAsync(out.data(), d_in, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost); // output is in d_in
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Memcpy of device's output to host failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+
+    // Free the memory on the device
+    cudaFreeAsync(d_in, 0);
+    cudaFreeAsync(d_out, 0);
+}
+
+void isingCudaGenGraph(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32_t k, uint32_t blocks)
+{
+    size_t n2 = in.size();
+    // check if `in` vector has a perfect square size
+    if (ceil(sqrt(n2)) != floor(sqrt(n2)))
+    {
+        std::cout << "Error: input vector has wrong dimensions" << std::endl;
+        return;
+    }
+    out.resize(n2);
+
+    // Allocate memory on the device (GPU)
+    uint8_t *d_in, *d_out;
+    cudaError_t error = cudaMallocAsync((void **)&d_in, n2 * sizeof(uint8_t), 0); // not async as we also need to copy the input
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Malloc of d_in failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+    error = cudaMallocAsync((void **)&d_out, n2 * sizeof(uint8_t), 0);
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Malloc of d_out failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+
+    // Copy the input from CPU to the device
+    error = cudaMemcpyAsync(d_in, in.data(), n2 * sizeof(uint8_t), cudaMemcpyHostToDevice);
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Memcpy of d_in failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+
+    uint32_t blockChunk;
+    if (blocks > n2)
+    {
+        std::cout << "No need for that many blocks. Using " << n2 << " blocks" << std::endl;
+        blocks = n2;
+        blockChunk = 1;
+    }
+    else
+    {
+        blockChunk = n2 / blocks;                         // number of elements each block will process
+        blocks = (uint32_t)ceil((double)n2 / blockChunk); // the actual number of blocks may change but the total number of elements
+                                                          // processed per block will be as expected
+    }
+
+    if (blocks > MAX_BLOCKS)
+    {
+        std::cout << "Error: too many blocks. Using " << MAX_BLOCKS << " blocks" << std::endl;
+        blocks = MAX_BLOCKS;
+        blockChunk = (uint32_t)ceil((double)n2 / blocks);
+    }
+
+    // Set arguments for the kernel
+    size_t n = (size_t)sqrt(n2);
+
+    cudaStream_t stream; // stream capture is only supported on non-default streams
+    cudaStreamCreate(&stream);
+
+    cudaGraph_t graph;
+    cudaGraphExec_t instance;
+    cudaGraphCreate(&graph, 0);
+    cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal);
+
+    addValue<<<blocks, 1, 0, stream>>>(d_out, d_in, n, blockChunk);
+
+    assignClearValue<<<blocks, 1, 0, stream>>>(d_out, d_in, n, blockChunk);
+
+    cudaStreamEndCapture(stream, &graph);
+
+    cudaGraphInstantiate(&instance, graph, NULL, NULL, 0);
+
+    for (size_t iter = 0; iter < k; iter++)
+    {
+        error = cudaGraphLaunch(instance, stream);
+        if (error != cudaSuccess)
+        {
+            fprintf(stderr, "Graph launch iteration %ld failed: %s\n", iter, cudaGetErrorString(error));
+            printf("Error: %d\n", error);
+            return;
+        }
+    }
+
+    // Wait for the kernel to finish to avoid exiting the program prematurely
+    error = cudaStreamSynchronize(stream);
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Device synchronization failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+
+    cudaStreamDestroy(stream);
+    cudaGraphExecDestroy(instance);
+    cudaGraphDestroy(graph);
+
+    // Copy the output back to the host
+    error = cudaMemcpyAsync(out.data(), d_in, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost); // output is in d_in
+    if (error != cudaSuccess)
+    {
+        fprintf(stderr, "Memcpy of device's output to host failed: %s\n", cudaGetErrorString(error));
+        printf("Error: %d\n", error);
+        return;
+    }
+
+    // Free the memory on the device
+    cudaFreeAsync(d_in, 0);
+    cudaFreeAsync(d_out, 0);
+}
+
+void isingCudaGenStreams(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32_t k, uint32_t blocks)
 {
     size_t n2 = in.size();
     // check if `in` vector has a perfect square size
@@ -200,37 +455,31 @@ void isingCudaGen(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uin
     for (size_t iter = 0; iter < k; iter++)
     {
         // Launch the kernel
-        addValue<<<blocks, 1, 0, up>>>(d_out, d_in, n, blockChunk, upFunc);
-        addValue<<<blocks, 1, 0, down>>>(d_out, d_in, n, blockChunk, downFunc);
-        addValue<<<blocks, 1, 0, left>>>(d_out, d_in, n, blockChunk, leftFunc);
-        addValue<<<blocks, 1, 0, right>>>(d_out, d_in, n, blockChunk, rightFunc);
-        addValue<<<blocks, 1, 0, center>>>(d_out, d_in, n, blockChunk, centerFunc);
+        addValueStreams<<<blocks, 1, 0, up>>>(d_out, d_in, n, blockChunk, upFunc);
+        addValueStreams<<<blocks, 1, 0, down>>>(d_out, d_in, n, blockChunk, downFunc);
+        addValueStreams<<<blocks, 1, 0, left>>>(d_out, d_in, n, blockChunk, leftFunc);
+        addValueStreams<<<blocks, 1, 0, right>>>(d_out, d_in, n, blockChunk, rightFunc);
+        addValueStreams<<<blocks, 1, 0, center>>>(d_out, d_in, n, blockChunk, centerFunc);
         error = cudaGetLastError(); // Since no error was returned from all the previous cuda calls,
                                     // the last error must be from the kernel launches
 
         if (error != cudaSuccess)
         {
-            fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(error));
+            fprintf(stderr, "Add Kernel launch failed: %s\n", cudaGetErrorString(error));
             printf("Error: %d\n", error);
         }
 
-        assignClearValue<<<blocks, 1>>>(d_out, d_in, n, blockChunk); // no sync needed because default stream is synchronous to the others
-        error = cudaGetLastError();                                  // Since no error was returned from all the previous cuda calls,
-        // the last error must be from the kernel launches
+        assignClearValueStreams<<<blocks, 1>>>(d_out, d_in, n, blockChunk); // no sync needed because default stream is synchronous to the others
+        error = cudaGetLastError();                                         // Since no error was returned from all the previous cuda calls,
+                                                                            // the last error must be from the kernel launches
         if (error != cudaSuccess)
         {
-            fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(error));
+            fprintf(stderr, "Assign Kernel launch failed: %s\n", cudaGetErrorString(error));
             printf("Error: %d\n", error);
         }
     }
 
-    cudaStreamDestroy(up);
-    cudaStreamDestroy(down);
-    cudaStreamDestroy(left);
-    cudaStreamDestroy(right);
-    cudaStreamDestroy(center);
-
-    // Wait for the default stream to finish to launch next iteration
+    // Wait for the kernel to finish to avoid exiting the program prematurely
     error = cudaStreamSynchronize(0);
     if (error != cudaSuccess)
     {
@@ -239,8 +488,14 @@ void isingCudaGen(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uin
         return;
     }
 
+    cudaStreamDestroy(up);
+    cudaStreamDestroy(down);
+    cudaStreamDestroy(left);
+    cudaStreamDestroy(right);
+    cudaStreamDestroy(center);
+
     // Copy the output back to the host
-    error = cudaMemcpyAsync(out.data(), d_in, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost); // last iteration's output is in d_in
+    error = cudaMemcpyAsync(out.data(), d_in, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost); // output is in d_in
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Memcpy of device's output to host failed: %s\n", cudaGetErrorString(error));
@@ -253,7 +508,7 @@ void isingCudaGen(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uin
     cudaFreeAsync(d_out, 0);
 }
 
-void isingCudaGenGraph(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32_t k, uint32_t blocks)
+void isingCudaGenGraphStreams(std::vector<uint8_t> &out, std::vector<uint8_t> &in, const uint32_t k, uint32_t blocks)
 {
     size_t n2 = in.size();
     // check if `in` vector has a perfect square size
@@ -374,7 +629,7 @@ void isingCudaGenGraph(std::vector<uint8_t> &out, std::vector<uint8_t> &in, cons
     // Create nodes for the addValue kernel launches
     for (int i = 0; i < 5; ++i)
     {
-        kernelNodeParams[i].func = (void *)addValue; // Assuming addValue is a global function
+        kernelNodeParams[i].func = (void *)addValueStreams; // Assuming addValue is a global function
         kernelNodeParams[i].gridDim = blocks;
         kernelNodeParams[i].blockDim = 1;
         kernelNodeParams[i].sharedMemBytes = 0;
@@ -412,7 +667,7 @@ void isingCudaGenGraph(std::vector<uint8_t> &out, std::vector<uint8_t> &in, cons
     // Parameters for the assignClearValue kernel
     void *assignClearValueArgs[4] = {(void *)&d_out, (void *)&d_in, (void *)&n, (void *)&blockChunk};
 
-    assignClearValueNodeParams.func = (void *)assignClearValue;
+    assignClearValueNodeParams.func = (void *)assignClearValueStreams;
     assignClearValueNodeParams.gridDim = blocks;
     assignClearValueNodeParams.blockDim = 1;
     assignClearValueNodeParams.sharedMemBytes = 0;
@@ -475,7 +730,7 @@ void isingCudaGenGraph(std::vector<uint8_t> &out, std::vector<uint8_t> &in, cons
     cudaGraphDestroy(graph);
 
     // Copy the output back to the host
-    error = cudaMemcpy(out.data(), d_in, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost); // last iteration's output is in d_in
+    error = cudaMemcpy(out.data(), d_in, n2 * sizeof(uint8_t), cudaMemcpyDeviceToHost); // output is in d_in
     if (error != cudaSuccess)
     {
         fprintf(stderr, "Memcpy of device's output to host failed: %s\n", cudaGetErrorString(error));
