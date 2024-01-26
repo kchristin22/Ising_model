@@ -6,6 +6,8 @@ project(ISING LANGUAGES CXX CUDA)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --cuda -std=c++20 -O3")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+include_directories(lib/inc)
+
 file(GLOB SOURCES "src/*.cu")
 
 add_executable(output main.cu ${SOURCES})

@@ -6,6 +6,7 @@
         "${default}",
         "/usr/include/**",
         "${workspaceFolder}/inc/**",
+        "${workspaceFolder}/lib/inc/**",
         "/usr/local/**"
       ],
       "defines": [],

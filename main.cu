@@ -10,6 +10,9 @@
 #include "cudaBlocks.cuh"
 #include "cudaThreadsShared.cuh"
 
+#define ANKERL_NANOBENCH_IMPLEMENT
+#include "nanobench.h"
+
 std::map<uint8_t, std::string> VersionsMap =
     {
         {0, "SEQ"},
@@ -144,22 +147,24 @@ int main(int argc, char **argv)
         {11, [&]()
          { isingCudaGenGraphStreams(out, in, k, blocks); }}};
 
-    struct timeval start, end;
-
     std::cout << "Running version " << VersionsMap[version] << std::endl;
 
     if (version < 12)
     {
-        // run the version specified
-        gettimeofday(&start, NULL);
-        run[version]();
-        gettimeofday(&end, NULL);
+        char *filename = new char[17];
+        sprintf(filename, "version_%d.json", version);
+        std::fstream file(filename, std::ios::out);
+
+        // run and benchmark the version specified
+        ankerl::nanobench::Bench()
+            .minEpochIterations(100)
+            .epochs(5)
+            .run(filename, [&]
+                 { run[version](); })
+            .render(ankerl::nanobench::templates::pyperf(), file);
 
         if (VersionsMap[version] == "SEQ")
-        {
-            std::cout << "Time: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
             return 0;
-        }
 
         cudaDeviceSynchronize();
 
@@ -175,7 +180,6 @@ int main(int argc, char **argv)
         // }
         // std::cout << std::endl;
         std::cout << "Seq and Cuda are equal: " << (out == outSeq) << std::endl;
-        std::cout << "Time: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
 
         return 0;
     }
@@ -189,68 +193,108 @@ int main(int argc, char **argv)
 
     if (VersionsMap[version] == "ALL_GEN")
     {
-        gettimeofday(&start, NULL);
-        isingCudaGen(out, in, k, blocks);
-        gettimeofday(&end, NULL);
+        std::fstream blocksFile("blocks_gen", std::ios::out);
+
+        ankerl::nanobench::Bench()
+            .minEpochIterations(10)
+            .epochs(5)
+            .run("blocks_gen", [&]
+                 { isingCudaGen(out, in, k, blocks); })
+            .render(ankerl::nanobench::templates::pyperf(), blocksFile);
+
         std::cout << "Seq and Cuda blocks gen are equal: " << (out == outSeq) << std::endl;
-        std::cout << "Time blocks gen: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
         cudaDeviceSynchronize();
         in = in_copy;
 
-        gettimeofday(&start, NULL);
-        isingCudaGenStreams(out, in, k, blocks);
-        gettimeofday(&end, NULL);
+        std::fstream blocksStreamsFile("blocks_gen_streams", std::ios::out);
+
+        ankerl::nanobench::Bench()
+            .minEpochIterations(10)
+            .epochs(5)
+            .run("blocks_gen_streams", [&]
+                 { isingCudaGenStreams(out, in, k, blocks); })
+            .render(ankerl::nanobench::templates::pyperf(), blocksStreamsFile);
+
         std::cout << "Seq and Cuda blocks gen streams are equal: " << (out == outSeq) << std::endl;
-        std::cout << "Time blocks gen streams: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
         cudaDeviceSynchronize();
         in = in_copy;
 
-        gettimeofday(&start, NULL);
-        isingCudaGen(out, in, k);
-        gettimeofday(&end, NULL);
+        std::fstream threadsFile("threads_gen", std::ios::out);
+
+        ankerl::nanobench::Bench()
+            .minEpochIterations(100)
+            .epochs(5)
+            .run("threads_gen", [&]
+                 { isingCudaGen(out, in, k); })
+            .render(ankerl::nanobench::templates::pyperf(), threadsFile);
+
         std::cout << "Seq and Cuda threads gen are equal: " << (out == outSeq) << std::endl;
-        std::cout << "Time threads gen: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
         cudaDeviceSynchronize();
         in = in_copy;
 
-        gettimeofday(&start, NULL);
-        isingCudaGen(out, in, k, blocks, threadsPerBlock);
-        gettimeofday(&end, NULL);
+        std::fstream threadsSharedFile("threads_shared_gen", std::ios::out);
+
+        ankerl::nanobench::Bench()
+            .minEpochIterations(100)
+            .epochs(5)
+            .run("threads_shared_gen", [&]
+                 { isingCudaGen(out, in, k, blocks, threadsPerBlock); })
+            .render(ankerl::nanobench::templates::pyperf(), threadsSharedFile);
+
         std::cout << "Seq and Cuda threads shared gen are equal: " << (out == outSeq) << std::endl;
-        std::cout << "Time threads shared gen: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
         cudaDeviceSynchronize();
     }
     else
     {
-        gettimeofday(&start, NULL);
-        isingCudaGenGraph(out, in, k, blocks);
-        gettimeofday(&end, NULL);
+        std::fstream blocksFile("blocks_gen_graph", std::ios::out);
+
+        ankerl::nanobench::Bench()
+            .minEpochIterations(10)
+            .epochs(5)
+            .run("blocks_gen_graph", [&]
+                 { isingCudaGenGraph(out, in, k, blocks); })
+            .render(ankerl::nanobench::templates::pyperf(), blocksFile);
+
         std::cout << "Seq and Cuda blocks gen graph are equal: " << (out == outSeq) << std::endl;
-        std::cout << "Time blocks gen graph: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
         cudaDeviceSynchronize();
         in = in_copy;
 
-        gettimeofday(&start, NULL);
-        isingCudaGenGraphStreams(out, in, k, blocks);
-        gettimeofday(&end, NULL);
+        std::fstream blocksStreamsFile("blocks_gen_graph_streams", std::ios::out);
+
+        ankerl::nanobench::Bench()
+            .minEpochIterations(10)
+            .epochs(5)
+            .run("blocks_gen_graph_streams", [&]
+                 { isingCudaGenGraphStreams(out, in, k, blocks); })
+            .render(ankerl::nanobench::templates::pyperf(), blocksStreamsFile);
+
         std::cout << "Seq and Cuda blocks gen graph streams are equal: " << (out == outSeq) << std::endl;
-        std::cout << "Time blocks gen graph streams: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
         cudaDeviceSynchronize();
         in = in_copy;
 
-        gettimeofday(&start, NULL);
-        isingCudaGenGraph(out, in, k);
-        gettimeofday(&end, NULL);
+        std::fstream threadsFile("threads_gen_graph", std::ios::out);
+
+        ankerl::nanobench::Bench()
+            .minEpochIterations(100)
+            .epochs(5)
+            .run("threads_gen_graph", [&]
+                 { isingCudaGenGraph(out, in, k); })
+            .render(ankerl::nanobench::templates::pyperf(), threadsFile);
+
         std::cout << "Seq and Cuda threads gen graph are equal: " << (out == outSeq) << std::endl;
-        std::cout << "Time threads gen graph: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
         cudaDeviceSynchronize();
         in = in_copy;
 
-        gettimeofday(&start, NULL);
-        isingCudaGenGraph(out, in, k, blocks, threadsPerBlock);
-        gettimeofday(&end, NULL);
+        std::fstream threadsSharedFile("threads_shared_gen_graph", std::ios::out);
+
+        ankerl::nanobench::Bench()
+            .minEpochIterations(100)
+            .epochs(5)
+            .run("threads_shared_gen_graph", [&]
+                 { isingCudaGenGraph(out, in, k, blocks, threadsPerBlock); })
+            .render(ankerl::nanobench::templates::pyperf(), threadsSharedFile);
+
         std::cout << "Seq and Cuda threads shared gen graph are equal: " << (out == outSeq) << std::endl;
-        std::cout << "Time threads shared gen graph: " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec) << " us" << std::endl;
         cudaDeviceSynchronize();
     }
 
