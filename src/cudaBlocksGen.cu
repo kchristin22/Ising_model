@@ -467,7 +467,7 @@ void isingCudaGenStreams(std::vector<uint8_t> &out, std::vector<uint8_t> &in, co
 
         assignClearValueStreams<<<blocks, 1>>>(d_out, d_in, n, blockChunk); // no sync needed because default stream is synchronous to the others
         error = cudaGetLastError();                                         // Since no error was returned from all the previous cuda calls,
-                                                                            // the last error must be from the kernel launches if (error != cudaSuccess)
+                                                                            // the last error must be from the kernel launches
         if (error != cudaSuccess)
         {
             fprintf(stderr, "Assign Kernel launch failed: %s\n", cudaGetErrorString(error));
