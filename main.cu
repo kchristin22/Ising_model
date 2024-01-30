@@ -39,13 +39,15 @@ int main(int argc, char **argv)
     cudaGetDeviceProperties(&prop, device);
 
     // Needed to use cudaStreamSynchronize instead of cudaDeviceSynchronize which is slower
-    std::cout << "cudaDeviceScheduleBlockingSync flag: " << prop.kernelExecTimeoutEnabled << std::endl;
+    cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync);
 
     int supportsCoopLaunch = 0;
     cudaDeviceGetAttribute(&supportsCoopLaunch, cudaDevAttrCooperativeLaunch, device);
-    std::cout << "Cooperative launch support: " << supportsCoopLaunch << std::endl;
+    std::cout << "Cooperative launch support: " << supportsCoopLaunch << std::endl; // 1 if supported, 0 otherwise (if 0, use atomic counter instead of cooperative launch)
 
-    printf("Max grid size of dimesion x: %d bytes\n", prop.maxGridSize[0]); // change macro of MAX_BLOCKS if necessary
+    printf("Max grid size of dimesion x: %d bytes\n", prop.maxGridSize[0]);     // change macro of MAX_BLOCKS if necessary
+    printf("Max threads per block: %d bytes\n", prop.maxThreadsPerBlock);       // change macro of MAX_THREADS_PER_BLOCK if necessary
+    printf("Max shared memory per block: %ld bytes\n", prop.sharedMemPerBlock); // change macro of MAX_SHARED_MEMORY if necessary
 
     uint8_t version;
     size_t n;
