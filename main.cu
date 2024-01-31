@@ -38,9 +38,6 @@ int main(int argc, char **argv)
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, device);
 
-    // Needed to use cudaStreamSynchronize instead of cudaDeviceSynchronize which is slower
-    cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync);
-
     int supportsCoopLaunch = 0;
     cudaDeviceGetAttribute(&supportsCoopLaunch, cudaDevAttrCooperativeLaunch, device);
     std::cout << "Cooperative launch support: " << supportsCoopLaunch << std::endl; // 1 if supported, 0 otherwise (if 0, use atomic counter instead of cooperative launch)
