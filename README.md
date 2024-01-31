@@ -44,6 +44,7 @@ To successfully compile and run the program you need to execute the follow comma
    * maximum number of blocks availabe in the grid: set the `MAX_BLOCKS` macro accordingly
    * maximum number of threads per block: set the `MAX_THREADS_PER_BLOCK` macro accordingly
    * maximum amount of shared memory available per block (in bytes): set the `MAX_SHARED_MEMORY` macro accordingly
+* You may need to use `cudaDeviceSynchronize()` before checking the results as the asynchronous memcpy from device may not have completed.
 * A flag regarding the correctness of the output state is displayed. Its value is determined by whether the ouput state matches the one of the sequential version.
 * CUDA does not offer atomic operations on uint8 pointers. Hence, this [custom function](https://stackoverflow.com/a/59329536) was used when necessary.
 * For further statistics regarding each benchmark you perform using `nanobench` you may use: `python3 -m pyperf stats file1.json`
