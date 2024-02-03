@@ -35,7 +35,7 @@ To successfully compile and run the program you need to execute the follow comma
 4. `cmake ..`
 5. `cmake --build .`
 6. `cd bin/`
-7. `./output ${version} ${n} ${k} ${#blocks} ${#threads per block}` # The last two arguments are optional depeding the version you run. The input array to the program is randomly generated based on `n` which refers to a single dimension of the square lattice. `k` denotes the number of iterations to be run on the lattice, or, in other words, the number of states the lattice will change.
+7. `./output ${version} ${n} ${k} ${#blocks} ${#threads per block}` # The last two arguments are optional depeding on the version you run. The input array to the program is randomly generated based on `n` which refers to a single dimension of the square lattice. `k` denotes the number of iterations to be run on the lattice, or, in other words, the number of states the lattice will change.
 
 ### Notes
 * You may need to alter the minimum version of CMake needed in CMakeLists.txt
